@@ -117,9 +117,9 @@ TEST_CASE("planner reaches the target or stops at its limits, and never makes th
     const auto f = computeFrames(v, b);
     Word w; w.t0 = 2.0; w.t1 = 2.5;
     const float before = scoreWord(f, frameAtTime(w.t0), frameAtTime(w.t1), Device::Phone, {}).score;
-    w.fix = planFix(f, w, Device::Phone, 0.0f);
+    w.fix = planFix(f, w, Device::Phone, {});
     REQUIRE(w.fix.active);
-    scoreAllDevices(f, w, 0.0f);
+    scoreAllDevices(f, w, {});
     CHECK(w.verdict[0].score > before + 3.0f);
     CHECK(w.verdict[0].baseScore == doctest::Approx(before).epsilon(0.01));
     for (float x : w.fix.vocalBoostDb) CHECK(x <= 4.0f);
@@ -133,7 +133,7 @@ TEST_CASE("a word that is already clear gets no fix") {
     auto b = std::vector<float>(v.size(), 0.0f);
     const auto f = computeFrames(v, b);
     Word w; w.t0 = 1.0; w.t1 = 1.4;
-    CHECK(!planFix(f, w, Device::Studio, 0.0f).active);
+    CHECK(!planFix(f, w, Device::Studio, {}).active);
 }
 
 TEST_CASE("segmenter finds voice stretches and leaves silence out") {
@@ -463,6 +463,43 @@ TEST_CASE("session: damaged state is refused and leaves the session usable") {
     CHECK(!t.result());
     CHECK(t.load(blob.data(), blob.size()));
     CHECK(t.result());
+}
+
+TEST_CASE("faders after the plugin count: the score follows them as the mix would") {
+    const auto v = fakeVoice(-20, 4.0);
+    const auto b = bandNoise(100, 7000, -22, static_cast<int>(v.size()), kAnalysisRate);
+    const auto f = computeFrames(v, b);
+    const auto scoreWith = [&](float vocalDb, float beatDb) {
+        ScoreMods m;
+        m.mix.vocalFaderDb = vocalDb;
+        m.mix.beatFaderDb = beatDb;
+        return scoreWord(f, 100, 300, Device::Phone, m).score;
+    };
+    const float flat = scoreWith(0.0f, 0.0f);
+    CHECK(scoreWith(0.0f, -6.0f) > flat);
+    CHECK(scoreWith(-6.0f, 0.0f) < flat);
+    // Only the difference matters while the mix is matched in loudness, as a streaming service does.
+    CHECK(scoreWith(-6.0f, -6.0f) == doctest::Approx(flat).epsilon(0.03));
+}
+
+TEST_CASE("session: moving a fader rescores without another analysis") {
+    Rig r;
+    SongSession s;
+    s.attachLink(&r.group, r.slot);
+    s.setStores(r.vs, nullptr);
+    r.play(s, 5.0, -24, -12);
+    s.waitIdle();
+    REQUIRE(s.result());
+    const float before = s.result()->words[1].verdict[0].score;
+    const auto generation = s.generation();
+    s.setFaders(0.0f, -9.0f);
+    s.waitIdle();
+    CHECK(s.result()->words[1].verdict[0].score > before);
+    CHECK(s.generation() != generation);
+    s.setFaders(0.0f, 0.0f);
+    s.waitIdle();
+    CHECK(s.result()->words[1].verdict[0].score == doctest::Approx(before));
+    s.attachLink(nullptr, -1);
 }
 
 TEST_CASE("syllables come from the spelling") {

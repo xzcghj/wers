@@ -95,16 +95,27 @@ BandFrames computeFrames(const std::vector<float>& vocal, const std::vector<floa
     }
 
     // Mix loudness, from the same signals the listener hears.
-    LoudnessMeter meter;
+    LoudnessMeter meter, vocalMeter, beatMeter;
     meter.prepare(kAnalysisRate);
-    std::vector<float> mix(4096);
+    vocalMeter.prepare(kAnalysisRate);
+    beatMeter.prepare(kAnalysisRate);
+    std::vector<float> mix(4096), beatPart(4096);
     for (size_t pos = 0; pos < n; pos += mix.size()) {
         const size_t len = std::min(mix.size(), n - pos);
-        for (size_t i = 0; i < len; ++i) mix[i] = vocal[pos + i] + (pos + i < beat.size() ? beat[pos + i] : 0.0f);
+        for (size_t i = 0; i < len; ++i) {
+            beatPart[i] = pos + i < beat.size() ? beat[pos + i] : 0.0f;
+            mix[i] = vocal[pos + i] + beatPart[i];
+        }
         const float* ch[1] = { mix.data() };
         meter.process(ch, 1, static_cast<int>(len));
+        const float* vocalCh[1] = { vocal.data() + pos };
+        vocalMeter.process(vocalCh, 1, static_cast<int>(len));
+        const float* beatCh[1] = { beatPart.data() };
+        beatMeter.process(beatCh, 1, static_cast<int>(len));
     }
     f.lufs = meter.integratedLufs();
+    f.lufsVocal = vocalMeter.integratedLufs();
+    f.lufsBeat = beatMeter.integratedLufs();
 
     // Sound classes: the same classifier as the realtime path, averaged over each 10 ms step and
     // assigned to the frame whose window centre falls in that step.

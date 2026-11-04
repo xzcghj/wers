@@ -152,8 +152,21 @@ std::shared_ptr<const SongResult> SongSession::result() const { std::lock_guard<
 void SongSession::setPlaceDepth(float depth) {
     {
         std::lock_guard<std::mutex> g(stateMutex_);
-        if (std::abs(depth - placeDepth_) < 1e-4f) return;
-        placeDepth_ = depth;
+        if (std::abs(depth - mix_.placeDepth) < 1e-4f) return;
+        mix_.placeDepth = depth;
+    }
+    if (!rescorePending_.exchange(true))
+        enqueue([this] { rescorePending_.store(false); rescoreAll(); });
+}
+
+void SongSession::setFaders(float vocalDb, float beatDb) {
+    {
+        std::lock_guard<std::mutex> g(stateMutex_);
+        MixState next = mix_;
+        next.vocalFaderDb = vocalDb;
+        next.beatFaderDb = beatDb;
+        if (next.sameAs(mix_)) return;
+        mix_ = next;
     }
     if (!rescorePending_.exchange(true))
         enqueue([this] { rescorePending_.store(false); rescoreAll(); });
@@ -176,20 +189,20 @@ void SongSession::requestPreview(int index, Device target) {
         if (ticket != previewRequest_.load()) return;
         std::shared_ptr<const BandFrames> frames;
         std::shared_ptr<const SongResult> res;
-        float depth;
+        MixState mix;
         {
             std::lock_guard<std::mutex> g(stateMutex_);
-            frames = frames_; res = result_; depth = placeDepth_;
+            frames = frames_; res = result_; mix = mix_;
         }
         if (!frames || !res || index < 0 || index >= static_cast<int>(res->words.size())) return;
         Word w = res->words[static_cast<size_t>(index)];
         PlannerLimits lim;
-        lim.maxCutDb = 3.0f + 5.0f * depth;
+        lim.maxCutDb = 3.0f + 5.0f * mix.placeDepth;
         Preview p;
         p.index = index; p.target = target;
-        p.fix = planFix(*frames, w, target, depth, lim);
+        p.fix = planFix(*frames, w, target, mix, lim);
         w.fix = p.fix;
-        scoreAllDevices(*frames, w, depth);
+        scoreAllDevices(*frames, w, mix);
         p.predictedScore = w.verdict[static_cast<size_t>(target)].score;
         {
             std::lock_guard<std::mutex> g(stateMutex_);
@@ -371,15 +384,15 @@ void SongSession::runAnalysis(std::vector<float> vocal, std::vector<float> beat,
 
     phase_.store(SessionPhase::Scoring);
     progress_.store(0.0f);
-    float depth;
+    MixState mix;
     {
         std::lock_guard<std::mutex> g(stateMutex_);
-        depth = placeDepth_;
+        mix = mix_;
     }
     for (size_t i = 0; i < words.size(); ++i) {
         if (stop_.load() || cancelJob_.load()) return;
         words[i].consonants = consonantSpans(*frames, words[i].t0, words[i].t1);
-        scoreAllDevices(*frames, words[i], depth);
+        scoreAllDevices(*frames, words[i], mix);
         progress_.store(static_cast<float>(i + 1) / static_cast<float>(words.size()));
     }
     {
@@ -444,16 +457,16 @@ void SongSession::publishPlan(const std::vector<Word>& words) {
 void SongSession::rescoreAll() {
     std::shared_ptr<const BandFrames> frames;
     std::shared_ptr<const SongResult> old;
-    float depth;
+    MixState mix;
     {
         std::lock_guard<std::mutex> g(stateMutex_);
-        frames = frames_; old = result_; depth = placeDepth_;
+        frames = frames_; old = result_; mix = mix_;
     }
     if (!frames || !old) return;
     auto words = old->words;
     for (auto& w : words) {
         if (stop_.load()) return;
-        scoreAllDevices(*frames, w, depth);
+        scoreAllDevices(*frames, w, mix);
     }
     publish(std::move(words), old->hasText, old->hasBeat, old->endSeconds, old->lufs, old->textFailed);
 }
@@ -462,18 +475,18 @@ void SongSession::fixWord(int index, Device target) {
     enqueue([this, index, target] {
         std::shared_ptr<const BandFrames> frames;
         std::shared_ptr<const SongResult> old;
-        float depth;
+        MixState mix;
         {
             std::lock_guard<std::mutex> g(stateMutex_);
-            frames = frames_; old = result_; depth = placeDepth_;
+            frames = frames_; old = result_; mix = mix_;
         }
         if (!frames || !old || index < 0 || index >= static_cast<int>(old->words.size())) return;
         auto words = old->words;
         Word& w = words[static_cast<size_t>(index)];
         PlannerLimits lim;
-        lim.maxCutDb = 3.0f + 5.0f * depth;
-        w.fix = planFix(*frames, w, target, depth, lim);
-        scoreAllDevices(*frames, w, depth);
+        lim.maxCutDb = 3.0f + 5.0f * mix.placeDepth;
+        w.fix = planFix(*frames, w, target, mix, lim);
+        scoreAllDevices(*frames, w, mix);
         publish(std::move(words), old->hasText, old->hasBeat, old->endSeconds, old->lufs, old->textFailed);
     });
 }
@@ -482,16 +495,16 @@ void SongSession::undoFix(int index) {
     enqueue([this, index] {
         std::shared_ptr<const BandFrames> frames;
         std::shared_ptr<const SongResult> old;
-        float depth;
+        MixState mix;
         {
             std::lock_guard<std::mutex> g(stateMutex_);
-            frames = frames_; old = result_; depth = placeDepth_;
+            frames = frames_; old = result_; mix = mix_;
         }
         if (!old || index < 0 || index >= static_cast<int>(old->words.size())) return;
         auto words = old->words;
         Word& w = words[static_cast<size_t>(index)];
         w.fix = WordFix{};
-        if (frames) scoreAllDevices(*frames, w, depth);
+        if (frames) scoreAllDevices(*frames, w, mix);
         else for (auto& v : w.verdict) v.score = v.baseScore;
         publish(std::move(words), old->hasText, old->hasBeat, old->endSeconds, old->lufs, old->textFailed);
     });
@@ -501,22 +514,22 @@ void SongSession::fixAllBelow(float threshold, Device target) {
     enqueue([this, threshold, target] {
         std::shared_ptr<const BandFrames> frames;
         std::shared_ptr<const SongResult> old;
-        float depth;
+        MixState mix;
         {
             std::lock_guard<std::mutex> g(stateMutex_);
-            frames = frames_; old = result_; depth = placeDepth_;
+            frames = frames_; old = result_; mix = mix_;
         }
         if (!frames || !old) return;
         auto words = old->words;
         PlannerLimits lim;
-        lim.maxCutDb = 3.0f + 5.0f * depth;
+        lim.maxCutDb = 3.0f + 5.0f * mix.placeDepth;
         size_t done = 0;
         for (auto& w : words) {
             if (stop_.load()) return;
             ++done;
             if (w.fix.active || w.verdict[static_cast<size_t>(target)].score >= threshold) continue;
-            w.fix = planFix(*frames, w, target, depth, lim);
-            scoreAllDevices(*frames, w, depth);
+            w.fix = planFix(*frames, w, target, mix, lim);
+            scoreAllDevices(*frames, w, mix);
             progress_.store(static_cast<float>(done) / static_cast<float>(words.size()));
         }
         publish(std::move(words), old->hasText, old->hasBeat, old->endSeconds, old->lufs, old->textFailed);
@@ -527,16 +540,16 @@ void SongSession::clearAllFixes() {
     enqueue([this] {
         std::shared_ptr<const BandFrames> frames;
         std::shared_ptr<const SongResult> old;
-        float depth;
+        MixState mix;
         {
             std::lock_guard<std::mutex> g(stateMutex_);
-            frames = frames_; old = result_; depth = placeDepth_;
+            frames = frames_; old = result_; mix = mix_;
         }
         if (!old) return;
         auto words = old->words;
         for (auto& w : words) {
             w.fix = WordFix{};
-            if (frames) scoreAllDevices(*frames, w, depth);
+            if (frames) scoreAllDevices(*frames, w, mix);
             else for (auto& v : w.verdict) v.score = v.baseScore;
         }
         publish(std::move(words), old->hasText, old->hasBeat, old->endSeconds, old->lufs, old->textFailed);
@@ -619,7 +632,7 @@ std::vector<uint8_t> SongSession::save() const {
     }
     put32(o, frames ? static_cast<uint32_t>(frames->count) : 0u);
     if (frames) {
-        putD(o, frames->lufs);
+        putD(o, frames->lufs); putD(o, frames->lufsVocal); putD(o, frames->lufsBeat);
         const auto n = static_cast<size_t>(frames->count);
         for (size_t i = 0; i < n * kSiiBands; ++i) o.push_back(quantPsd(frames->vocal18[i]));
         for (size_t i = 0; i < n * kSiiBands; ++i) o.push_back(quantPsd(frames->beat18[i]));
@@ -687,7 +700,7 @@ bool SongSession::load(const uint8_t* data, size_t size) {
     std::shared_ptr<BandFrames> frames;
     if (frameCount > 0) {
         frames = std::make_shared<BandFrames>();
-        frames->lufs = r.f64();
+        frames->lufs = r.f64(); frames->lufsVocal = r.f64(); frames->lufsBeat = r.f64();
         const size_t n = frameCount;
         const size_t perFrame = 2 * kSiiBands + 2 * kCutBands + 1;
         if (!r.ok() || n > r.remaining() / perFrame) return false;

@@ -2,11 +2,11 @@
 
 namespace wers {
 
-void scoreAllDevices(const BandFrames& f, Word& w, float placeDepth) {
+void scoreAllDevices(const BandFrames& f, Word& w, const MixState& mix) {
     const int a = frameAtTime(w.t0), b = frameAtTime(w.t1);
     for (int d = 0; d < kNumDevices; ++d) {
         auto& v = w.verdict[static_cast<size_t>(d)];
-        ScoreMods base; base.placeDepth = placeDepth;
+        ScoreMods base; base.mix = mix;
         const WordScore s0 = scoreWord(f, a, b, static_cast<Device>(d), base);
         v.baseScore = s0.score;
         v.score = s0.score; v.worstBand = static_cast<int8_t>(s0.worstBand); v.cause = s0.cause;
@@ -20,13 +20,13 @@ void scoreAllDevices(const BandFrames& f, Word& w, float placeDepth) {
     }
 }
 
-WordFix planFix(const BandFrames& f, const Word& word, Device target, float placeDepth, const PlannerLimits& limits) {
+WordFix planFix(const BandFrames& f, const Word& word, Device target, const MixState& mix, const PlannerLimits& limits) {
     WordFix fix;
     fix.target = target;
     const int a = frameAtTime(word.t0), b = frameAtTime(word.t1);
     const int stride = b - a > 40 ? 2 : 1;
     ScoreMods mods;
-    mods.placeDepth = placeDepth;
+    mods.mix = mix;
     mods.vocalBoostDb = fix.vocalBoostDb.data();
     mods.beatCutDb = fix.beatCutDb.data();
     float current = scoreWord(f, a, b, target, mods, stride).score;

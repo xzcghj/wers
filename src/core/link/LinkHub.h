@@ -66,6 +66,11 @@ public:
     float placeDepth() const noexcept { return placeDepth_.load(std::memory_order_relaxed); }
     void requestPlaceDepth(float d) noexcept { requestedDepth_.store(d, std::memory_order_relaxed); }
     float takeRequestedPlaceDepth() noexcept { return requestedDepth_.exchange(-1.0f, std::memory_order_relaxed); }
+    // Fader positions after the plugins, when the host tells them.
+    void setVocalFaderDb(int slot, float db) noexcept { vocalFader_[static_cast<size_t>(slot)].store(db, std::memory_order_relaxed); }
+    float vocalFaderDb(int slot) const noexcept { return vocalFader_[static_cast<size_t>(slot)].load(std::memory_order_relaxed); }
+    void setBeatFaderDb(float db) noexcept { beatFader_.store(db, std::memory_order_relaxed); }
+    float beatFaderDb() const noexcept { return beatFader_.load(std::memory_order_relaxed); }
     int vocalCount() const noexcept { return vocals_.load(std::memory_order_relaxed); }
     int beatCount() const noexcept { return beats_.load(std::memory_order_relaxed); }
 private:
@@ -81,7 +86,8 @@ private:
     std::vector<std::shared_ptr<TimelineStore>> beatStores_;
     std::atomic<bool> fixesEnabled_{ true };
     std::atomic<int> vocals_{ 0 }, beats_{ 0 };
-    std::atomic<float> placeDepth_{ 0.0f }, requestedDepth_{ -1.0f };
+    std::atomic<float> placeDepth_{ 0.0f }, requestedDepth_{ -1.0f }, beatFader_{ 0.0f };
+    std::array<std::atomic<float>, kLinkSlots> vocalFader_{};
 };
 
 class LinkHub {

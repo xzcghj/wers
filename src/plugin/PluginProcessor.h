@@ -2,6 +2,7 @@
 #include "ModelManager.h"
 #include "Params.h"
 #include "ProcessRecognizer.h"
+#include "ReaperBridge.h"
 #include "analysis/SongSession.h"
 #include "dsp/Fonem.h"
 #include "dsp/Monitor.h"
@@ -42,6 +43,7 @@ public:
     void getStateInformation(juce::MemoryBlock& dest) override;
     void setStateInformation(const void* data, int size) override;
     void updateTrackProperties(const TrackProperties& properties) override;
+    juce::VST3ClientExtensions* getVST3ClientExtensions() override { return &reaper_; }
 
     // Interface for the editor. Message thread.
     juce::AudioProcessorValueTreeState& state() noexcept { return apvts_; }
@@ -94,6 +96,7 @@ private:
     StaleDetector staleDetector_;
     int ringHop_ = 240, ringCount_ = 0;
 
+    ReaperBridge reaper_;
     std::shared_ptr<LinkHub> hub_;
     LinkGroup* group_ = nullptr;
     GroupPlaceControl control_;

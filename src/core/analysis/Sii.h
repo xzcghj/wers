@@ -2,6 +2,7 @@
 // Word intelligibility model: ANSI S3.5-1997 Speech Intelligibility Index, one-third-octave procedure,
 // evaluated for each short-time frame of the masker (the idea of the Extended SII).
 #include "Types.h"
+#include <cmath>
 
 namespace wers {
 
@@ -16,8 +17,19 @@ float scoreFromSii(double sii) noexcept;
 const std::array<std::array<float, kSiiBands>, kCutBands>& cutSpread();
 const std::array<std::array<float, kSiiBands>, kBoostBands>& boostSpread();
 
+// What the mix around the word does at the moment.
+struct MixState {
+    float placeDepth = 0.0f;   // live Miejsce running on the beat
+    // Faders come after the plugin, so the captured signals do not contain them.
+    float vocalFaderDb = 0.0f;
+    float beatFaderDb = 0.0f;
+    bool sameAs(const MixState& o) const noexcept {
+        return std::abs(placeDepth - o.placeDepth) < 1e-4f && std::abs(vocalFaderDb - o.vocalFaderDb) < 0.05f && std::abs(beatFaderDb - o.beatFaderDb) < 0.05f;
+    }
+};
+
 struct ScoreMods {
-    float placeDepth = 0.0f;                  // live Miejsce running on the beat
+    MixState mix;
     const float* vocalBoostDb = nullptr;      // kBoostBands, applied on consonant frames
     const float* beatCutDb = nullptr;         // kCutBands, applied for the whole word
 };

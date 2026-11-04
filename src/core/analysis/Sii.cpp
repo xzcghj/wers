@@ -83,6 +83,20 @@ const std::array<std::array<float, kSiiBands>, kBoostBands>& boostSpread() {
     return t;
 }
 
+namespace {
+// How much the loudness of the whole mix moves with the faders. The two parts add up by power,
+// which is close enough for a song, where voice and beat are unrelated signals.
+float mixLoudnessShift(const BandFrames& f, const MixState& mix) noexcept {
+    if (mix.vocalFaderDb == 0.0f && mix.beatFaderDb == 0.0f) return 0.0f;
+    const double v = f.lufsVocal > -70.0 ? std::pow(10.0, f.lufsVocal * 0.1) : 0.0;
+    const double b = f.lufsBeat > -70.0 ? std::pow(10.0, f.lufsBeat * 0.1) : 0.0;
+    const double before = v + b;
+    const double after = v * std::pow(10.0, static_cast<double>(mix.vocalFaderDb) * 0.1) + b * std::pow(10.0, static_cast<double>(mix.beatFaderDb) * 0.1);
+    if (before <= 0.0 || after <= 0.0) return 0.0f;
+    return static_cast<float>(10.0 * std::log10(after / before));
+}
+} // namespace
+
 WordScore scoreWord(const BandFrames& f, int first, int last, Device d, const ScoreMods& mods, int stride) {
     WordScore out;
     first = std::clamp(first, 0, f.count);
@@ -93,7 +107,7 @@ WordScore scoreWord(const BandFrames& f, int first, int last, Device d, const Sc
     const auto& boost = boostSpread();
 
     // Playback calibration: the track plays at the device's assumed level after loudness matching.
-    const float lufs = f.lufs > -70.0 ? static_cast<float>(f.lufs) : -14.0f;
+    const float lufs = (f.lufs > -70.0 ? static_cast<float>(f.lufs) : -14.0f) + mixLoudnessShift(f, mods.mix);
     const float cal = dev.playbackSpl - lufs;
 
     std::array<float, kSiiBands> boostDb{};
@@ -134,7 +148,7 @@ WordScore scoreWord(const BandFrames& f, int first, int last, Device d, const Sc
 
     std::array<float, kSiiBands> Ev{}, Ec{};
     for (size_t k = 0; k < kSiiBands; ++k) {
-        const float base = dev.gainDb[k] + cal;
+        const float base = dev.gainDb[k] + cal + mods.mix.vocalFaderDb;
         if (nV > 0) Ev[k] = powerToDb(sumV[k] / nV, -200.0f) + base;
         if (nC > 0) Ec[k] = powerToDb(sumC[k] / nC, -200.0f) + base;
         // A word without consonant frames gets its boost everywhere.
@@ -152,10 +166,10 @@ WordScore scoreWord(const BandFrames& f, int first, int last, Device d, const Sc
         const bool cons = isConsonant(f.cls[static_cast<size_t>(i)]);
         // Live Miejsce and the word fix both act on the beat; the deeper of the two wins per band.
         std::array<float, kCutBands> bellCut{};
-        if (mods.placeDepth > 0.0f) {
+        if (mods.mix.placeDepth > 0.0f) {
             const float* v10 = f.v10(i);
             const float* b10 = f.b10(i);
-            for (int j = 0; j < kCutBands; ++j) bellCut[static_cast<size_t>(j)] = Place::liveCutDb(v10[j], b10[j], j, mods.placeDepth);
+            for (int j = 0; j < kCutBands; ++j) bellCut[static_cast<size_t>(j)] = Place::liveCutDb(v10[j] + mods.mix.vocalFaderDb, b10[j] + mods.mix.beatFaderDb, j, mods.mix.placeDepth);
         }
         if (hasFixCut)
             for (size_t j = 0; j < kCutBands; ++j) bellCut[j] = std::max(bellCut[j], mods.beatCutDb[j]);
@@ -165,7 +179,7 @@ WordScore scoreWord(const BandFrames& f, int first, int last, Device d, const Sc
             for (size_t k = 0; k < kSiiBands; ++k) cutDb[k] += bellCut[j] * cut[j][k];
         }
         for (size_t k = 0; k < kSiiBands; ++k) {
-            const double beat = fromDb10(b[k] + dev.gainDb[k] + cal - cutDb[k]);
+            const double beat = fromDb10(b[k] + dev.gainDb[k] + cal + mods.mix.beatFaderDb - cutDb[k]);
             const double amb = fromDb10(dev.noiseDb[k]);
             noise[k] = powerToDb(beat + amb, -200.0f);
             beatSum[k] += beat / (beat + amb);

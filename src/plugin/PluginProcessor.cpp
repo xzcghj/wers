@@ -312,14 +312,20 @@ void WersProcessor::timerCallback() {
     if (group_ == nullptr) return;
 
     const Role r = role();
+    const float faderDb = reaper_.trackGainDb();
     if (r == Role::Beat) {
         const float wanted = group_->takeRequestedPlaceDepth();
         if (wanted >= 0.0f) setParam(ids::place, wanted * 100.0f);
         group_->publishPlaceDepth(pPlace_->load() * 0.01f);
+        group_->setBeatFaderDb(faderDb);
     } else if (r == Role::Vocal) {
-        if (slot_ >= 0) group_->setStale(slot_, staleFlag_.load());
+        if (slot_ >= 0) {
+            group_->setStale(slot_, staleFlag_.load());
+            group_->setVocalFaderDb(slot_, faderDb);
+        }
         group_->setFixesEnabled(pFixes_->load() > 0.5f);
         session_.setPlaceDepth(group_->beatCount() > 0 ? group_->placeDepth() : 0.0f);
+        session_.setFaders(faderDb, group_->beatCount() > 0 ? group_->beatFaderDb() : 0.0f);
 
         // When the song stops after a real listen, the analysis starts by itself.
         if (session_.phase() == SessionPhase::Listening) {

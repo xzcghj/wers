@@ -37,7 +37,9 @@ public:
     void setLyrics(const std::string& lyrics);
     std::string lyrics() const;
     void setLanguage(const std::string& language);
-    void setPlaceDepth(float depth);   // rescoring happens in the background
+    void setPlaceDepth(float depth);
+    // Fader positions after the plugins, when the host tells them. Scores follow them right away.
+    void setFaders(float vocalDb, float beatDb);   // rescoring happens in the background
 
     // Commands.
     void startListening();
@@ -86,7 +88,7 @@ private:
     std::shared_ptr<TimelineStore> vocalStore_, sideStore_;
     std::function<std::unique_ptr<Recognizer>()> recognizerFactory_;
     std::string lyrics_, language_ = "pl", failure_;
-    float placeDepth_ = 0.0f;
+    MixState mix_;
     LinkGroup* group_ = nullptr;
     int slot_ = -1;
 

@@ -51,7 +51,8 @@ struct Word {
 // Spectral frames of both signals, the input of every score computation.
 struct BandFrames {
     int count = 0;
-    double lufs = -14.0;
+    double lufs = -14.0;                // the mix as captured
+    double lufsVocal = -100.0, lufsBeat = -100.0; // each part alone
     std::vector<float> vocal18, beat18; // PSD in dB re FS^2/Hz, count * kSiiBands
     std::vector<float> vocal10, beat10; // band power in dB, count * kCutBands
     std::vector<SoundClass> cls;        // sound class of each frame

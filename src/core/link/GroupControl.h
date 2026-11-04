@@ -23,7 +23,12 @@ public:
             if (plan != nullptr && !group->stale(s)) have = plan->vocalBandsAt(t, tmp.data());
             if (!have) have = group->ring(s).read(t, tmp.data());
             if (!have) continue;
-            for (size_t j = 0; j < kCutBands; ++j) out[j] = any ? std::max(out[j], tmp[j]) : tmp[j];
+            // The bands are compared as the mix has them, after both faders.
+            const float faders = group->vocalFaderDb(s) - group->beatFaderDb();
+            for (size_t j = 0; j < kCutBands; ++j) {
+                const float level = tmp[j] + faders;
+                out[j] = any ? std::max(out[j], level) : level;
+            }
             any = true;
         }
         return any;

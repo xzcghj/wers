@@ -30,6 +30,7 @@ void LinkGroup::releaseSlot(int slot) {
     std::lock_guard<std::mutex> g(mutex_);
     taken_[static_cast<size_t>(slot)] = false;
     stale_[static_cast<size_t>(slot)].store(false);
+    vocalFader_[static_cast<size_t>(slot)].store(0.0f);
     vocals_.fetch_sub(1);
 }
 

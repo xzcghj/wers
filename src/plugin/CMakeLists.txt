@@ -34,6 +34,7 @@ target_sources(WERS PRIVATE
     PluginProcessor.cpp
     ModelManager.cpp
     ProcessRecognizer.cpp
+    ReaperBridge.cpp
     ../ui/Theme.cpp
     ../ui/Controls.cpp
     ../ui/WordMapView.cpp

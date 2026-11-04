@@ -2,12 +2,15 @@
 #define DOCTEST_CONFIG_IMPLEMENT
 #include "doctest.h"
 #include "plugin/PluginProcessor.h"
+#include "plugin/ReaperHostInterface.h"
 #include "ui/PluginEditor.h"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <thread>
+#include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <new>
 using namespace wers;
 
@@ -543,6 +546,77 @@ TEST_CASE("recognition process: a missing program is a failure and nothing more"
     std::atomic<bool> cancel{ false };
     CHECK(r.transcribe(pcm, { { 0, pcm.size() } }, {}, cancel, {}).empty());
     CHECK(r.failed());
+}
+
+namespace {
+// Plays REAPER: a vocal track at -6 dB inside a folder at +2 dB, as the real host reports them.
+double fakeValue(void* track, const char* name) {
+    const auto id = reinterpret_cast<std::intptr_t>(track);
+    if (std::strcmp(name, "D_VOL") == 0) return id == 1 ? 0.5 : 1.2589254117941673;
+    if (std::strcmp(name, "B_MAINSEND") == 0) return 1.0;
+    return 0.0;
+}
+void* fakeParent(void* track) { return reinterpret_cast<std::intptr_t>(track) == 1 ? reinterpret_cast<void*>(std::intptr_t{ 2 }) : nullptr; }
+bool fakeValidate(void*, void*, const char*) { return true; }
+
+class FakeReaper final : public IReaperHostApplication {
+public:
+    Steinberg::tresult PLUGIN_API queryInterface(const Steinberg::TUID id, void** out) override {
+        if (std::memcmp(id, reaperHostIid(), sizeof(Steinberg::TUID)) == 0) { *out = this; addRef(); return Steinberg::kResultOk; }
+        *out = nullptr;
+        return Steinberg::kNoInterface;
+    }
+    Steinberg::uint32 PLUGIN_API addRef() override { return static_cast<Steinberg::uint32>(++refs); }
+    Steinberg::uint32 PLUGIN_API release() override { return static_cast<Steinberg::uint32>(--refs); }
+    void* PLUGIN_API getReaperApi(Steinberg::CStringA name) override {
+        if (std::strcmp(name, "GetMediaTrackInfo_Value") == 0) return reinterpret_cast<void*>(&fakeValue);
+        if (std::strcmp(name, "GetParentTrack") == 0) return reinterpret_cast<void*>(&fakeParent);
+        if (std::strcmp(name, "ValidatePtr2") == 0) return reinterpret_cast<void*>(&fakeValidate);
+        return nullptr;
+    }
+    void* PLUGIN_API getReaperParent(Steinberg::uint32 what) override { return what == 1 ? reinterpret_cast<void*>(std::intptr_t{ 1 }) : nullptr; }
+    void* PLUGIN_API reaperExtended(Steinberg::uint32, void*, void*, void*) override { return nullptr; }
+    int refs = 1;
+};
+
+class NotReaper final : public Steinberg::FUnknown {
+public:
+    Steinberg::tresult PLUGIN_API queryInterface(const Steinberg::TUID, void** out) override { *out = nullptr; return Steinberg::kNoInterface; }
+    Steinberg::uint32 PLUGIN_API addRef() override { return 1; }
+    Steinberg::uint32 PLUGIN_API release() override { return 1; }
+};
+}
+
+TEST_CASE("REAPER: the fader of the track and of its folder are read through the host interface") {
+    FakeReaper host;
+    {
+        ReaperBridge bridge;
+        CHECK(!bridge.connected());
+        CHECK(bridge.trackGainDb() == 0.0f);
+        bridge.setIHostApplication(&host);
+        CHECK(bridge.connected());
+        CHECK(bridge.trackGainDb() == doctest::Approx(-4.02f).epsilon(0.01));
+        CHECK(host.refs == 2);
+    }
+    CHECK(host.refs == 1);
+    ReaperBridge other;
+    NotReaper notReaper;
+    other.setIHostApplication(&notReaper);
+    CHECK(!other.connected());
+    CHECK(other.trackGainDb() == 0.0f);
+    other.setIHostApplication(nullptr);
+    CHECK(!other.connected());
+}
+
+TEST_CASE("REAPER: a vocal instance passes the faders on to the scores and to the beat") {
+    FakeReaper host;
+    WersProcessor vocal;
+    vocal.getVST3ClientExtensions()->setIHostApplication(&host);
+    setParam(vocal, ids::group, 7.0f);
+    pump(300);
+    REQUIRE(vocal.group() != nullptr);
+    REQUIRE(vocal.linkSlot() >= 0);
+    CHECK(vocal.group()->vocalFaderDb(vocal.linkSlot()) == doctest::Approx(-4.02f).epsilon(0.01));
 }
 
 TEST_CASE("every instance sees one and the same model manager") {
