@@ -228,6 +228,7 @@ TEST_CASE("session: analysis without recognizer gives scored fragments and a pla
 TEST_CASE("session: recognizer words are used, refined and scored, and the model listens twice: vocal, then mix") {
     Rig r;
     SongSession s;
+    s.forceMixCheckForTests();
     s.attachLink(&r.group, r.slot);
     s.setStores(r.vs, nullptr);
     std::atomic<int> calls{ 0 };
@@ -252,6 +253,7 @@ TEST_CASE("session: recognizer words are used, refined and scored, and the model
 TEST_CASE("session: the model also listens to the mix and marks what it no longer hears") {
     Rig r;
     SongSession s;
+    s.forceMixCheckForTests();
     s.attachLink(&r.group, r.slot);
     s.setStores(r.vs, nullptr);
     s.setRecognizerFactory([&] {
@@ -538,6 +540,26 @@ TEST_CASE("peaks are found on every syllable of a fast verse") {
     const auto peaks = findSyllablePeaks(f, 0, f.count);
     REQUIRE(peaks.size() == starts.size());
     for (size_t i = 0; i < peaks.size(); ++i) CHECK(std::abs(frameCentre(peaks[i].frame) - (starts[i] + 0.06)) < 0.03);
+}
+
+TEST_CASE("a faint bump in the gap between loud syllables is not a syllable") {
+    auto x = syllableVoice({ 1.0, 1.5 }, 0.2, 3.0);
+    // Breath-level sound in the middle of the gap, 30 dB under the voice.
+    const auto bump = syllableVoice({ 1.3 }, 0.1, 3.0);
+    for (size_t i = 0; i < x.size(); ++i) x[i] += 0.03f * bump[i];
+    const auto f = computeFrames(x, {});
+    const auto peaks = findSyllablePeaks(f, 0, f.count);
+    REQUIRE(peaks.size() == 2);
+    CHECK(std::abs(frameCentre(peaks[0].frame) - 1.1) < 0.03);
+    CHECK(std::abs(frameCentre(peaks[1].frame) - 1.6) < 0.03);
+}
+
+TEST_CASE("a quiet phrase keeps its syllables, only a neighbour next to it decides what is faint") {
+    auto x = syllableVoice({ 1.0, 1.25 }, 0.2, 5.0);
+    auto quiet = syllableVoice({ 3.0, 3.25 }, 0.2, 5.0);
+    for (size_t i = 0; i < x.size(); ++i) x[i] += 0.03f * quiet[i];
+    const auto f = computeFrames(x, {});
+    CHECK(findSyllablePeaks(f, 0, f.count).size() == 4);
 }
 
 TEST_CASE("rough word times land on the real syllables") {

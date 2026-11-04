@@ -25,7 +25,9 @@ private:
     double fs_ = 48000.0;
     LoudnessMeter meter_;
     std::array<DeviceFilter, 2> filter_{};
-    Device device_ = Device::Studio;
+    Device device_ = Device::Studio, nextDevice_ = Device::Studio;
+    // A change of device dips the sound for a few milliseconds, because the filters start from zero.
+    double switchGain_ = 1.0, switchStep_ = 0.01;
     NormMode norm_ = NormMode::Off;
     double appliedGainDb_ = 0.0, gain_ = 1.0, gainCoeff_ = 0.001;
     // Simple peak limiter used by Loud mode: 5 ms attack, 100 ms release, -1 dB ceiling.

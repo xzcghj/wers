@@ -71,8 +71,12 @@ std::vector<SyllablePeak> findSyllablePeaks(const BandFrames& f, int firstFrame,
     std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(n * 95 / 100), sorted.end());
     const float floorDb = sorted[n * 95 / 100] - 38.0f;
 
-    constexpr int kMinGap = 7;           // frames: 70 ms between syllables is faster than any rap
-    constexpr float kProminence = 3.0f;  // dB the peak must stand above the valleys beside it
+    constexpr int kMinGap = 7;            // frames: 70 ms between syllables is faster than any rap
+    constexpr int kCloseGap = 10;         // this near, two peaks need a clear dip to count as two sounds
+    constexpr float kCloseDip = 6.0f;
+    constexpr float kProminence = 3.0f;   // dB the peak must stand above the valleys beside it
+    constexpr float kFaint = 20.0f;       // this far under the voice next to it, a bump is a breath or a tail
+    constexpr size_t kNeighbours = 35;
     for (size_t i = 1; i + 1 < n; ++i) {
         if (s[i] < floorDb || s[i] < s[i - 1] || s[i] <= s[i + 1]) continue;
         // The lowest point on each side, up to the next taller sound or 250 ms away.
@@ -81,10 +85,17 @@ std::vector<SyllablePeak> findSyllablePeaks(const BandFrames& f, int firstFrame,
         for (size_t k = i + 1; k < n && k - i <= 25 && s[k] <= s[i]; ++k) rightLow = std::min(rightLow, s[k]);
         const float leftDepth = s[i] - leftLow, rightDepth = s[i] - rightLow;
         if (std::min(leftDepth, rightDepth) < kProminence) continue;
+        float loudest = s[i];
+        for (size_t k = i > kNeighbours ? i - kNeighbours : 0; k < std::min(n, i + kNeighbours + 1); ++k) loudest = std::max(loudest, s[k]);
+        if (loudest - s[i] > kFaint) continue;
         const int frame = a + static_cast<int>(i);
-        if (!out.empty() && frame - out.back().frame < kMinGap) {
-            if (s[i] > out.back().db) out.back() = { frame, s[i] };
-            continue;
+        if (!out.empty() && frame - out.back().frame < kCloseGap) {
+            float dip = s[i];
+            for (auto k = static_cast<size_t>(out.back().frame - a); k < i; ++k) dip = std::min(dip, s[k]);
+            if (frame - out.back().frame < kMinGap || std::min(s[i], out.back().db) - dip < kCloseDip) {
+                if (s[i] > out.back().db) out.back() = { frame, s[i] };
+                continue;
+            }
         }
         out.push_back({ frame, s[i] });
     }

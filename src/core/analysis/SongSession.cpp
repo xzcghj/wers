@@ -341,7 +341,9 @@ void SongSession::runAnalysis(std::vector<float> vocal, std::vector<float> beat,
             if (cancelJob_.load() || stop_.load()) return;
             // The same model on vocal plus beat: an independent check of what survives in the mix.
             std::vector<int8_t> heard;
-            if (hadBeat && !recognised.empty() && !textFailed) {
+            // It takes as long as the recognition itself, so a small computer skips it.
+            const bool enoughCores = std::thread::hardware_concurrency() >= 8 || forceMixCheck_;
+            if (hadBeat && !recognised.empty() && !textFailed && enoughCores) {
                 phase_.store(SessionPhase::CheckingMix);
                 progress_.store(0.0f);
                 generation_.fetch_add(1);

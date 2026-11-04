@@ -38,6 +38,8 @@ public:
     std::string lyrics() const;
     void setLanguage(const std::string& language);
     void setPlaceDepth(float depth);
+    // The check on the mix runs whatever the machine. For tests.
+    void forceMixCheckForTests() noexcept { forceMixCheck_ = true; }
     // Fader positions after the plugins, when the host tells them. Scores follow them right away.
     void setFaders(float vocalDb, float beatDb);   // rescoring happens in the background
 
@@ -89,6 +91,7 @@ private:
     std::function<std::unique_ptr<Recognizer>()> recognizerFactory_;
     std::string lyrics_, language_ = "pl", failure_;
     MixState mix_;
+    bool forceMixCheck_ = false;
     LinkGroup* group_ = nullptr;
     int slot_ = -1;
 

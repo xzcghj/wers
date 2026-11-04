@@ -53,6 +53,23 @@ TEST_CASE("device simulation changes realtime playback but never an offline rend
     CHECK(off == x);
 }
 
+TEST_CASE("switching the device while the song plays does not click") {
+    const double fs = 48000;
+    for (Device to : { Device::Phone, Device::Car, Device::Studio }) {
+        Monitor mon; mon.prepare(fs);
+        mon.setDevice(Device::Earbuds);
+        auto x = sine(440, -12, 96000, fs);
+        int block = 0;
+        inBlocks(x, 256, [&](float** c, int k, int64_t) {
+            if (++block == 150) mon.setDevice(to);
+            mon.process(c, 1, k, false);
+        });
+        float biggest = 0.0f;
+        for (size_t i = 4800; i + 1 < x.size(); ++i) biggest = std::max(biggest, std::abs(x[i + 1] - x[i]));
+        CHECK(biggest < 0.03f); // a 440 Hz tone at this level moves by about 0.015 per sample
+    }
+}
+
 TEST_CASE("studio monitor with no normalisation leaves audio bit exact") {
     Monitor mon; mon.prepare(44100);
     mon.setDevice(Device::Studio);
