@@ -72,7 +72,7 @@ void WordPanel::tick() {
 std::vector<WordPanel::Chip> WordPanel::phonemeChips(const juce::String& word, bool hasConsonantFix) {
     std::vector<Chip> out;
     juce::String w = word.toLowerCase();
-    const juce::String vowels = pl("aąeęioóuy"), sibilantOne = pl("sśzźżcć");
+    const juce::String vowels = pl("aąeęioóuy"), polishConsonants = pl("ćłńśźż");
     const juce::StringArray two{ "sz", "cz", "rz", pl("dź"), pl("dż"), "dz" };
     int i = 0;
     while (i < w.length()) {
@@ -80,8 +80,9 @@ std::vector<WordPanel::Chip> WordPanel::phonemeChips(const juce::String& word, b
         if (two.contains(pair)) { out.push_back({ pair, hasConsonantFix }); i += 2; continue; }
         if (pair == "ch") { out.push_back({ pair, hasConsonantFix }); i += 2; continue; }
         const auto c = w[i];
-        if (juce::CharacterFunctions::isLetter(c)) {
-            const bool vowel = vowels.containsChar(c);
+        const bool vowel = vowels.containsChar(c);
+        // The system's idea of a letter depends on its locale, so Polish letters are named here.
+        if (vowel || polishConsonants.containsChar(c) || juce::CharacterFunctions::isLetter(c)) {
             out.push_back({ juce::String::charToString(c), hasConsonantFix && !vowel });
         }
         ++i;

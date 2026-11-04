@@ -35,11 +35,11 @@ if not errorlevel 1 (
     powershell -NoProfile -Command "Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors | Format-List; 'RAM GB: ' + [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB)" >> "%LOGS%\tools.log" 2>&1
     echo configure %TIME%>> "%STATUS%"
     echo   Konfiguracja, pobieranie JUCE i whisper.cpp...
-    cmake -S "%ROOT%\src-tree" -B "%BUILD%" -G "Visual Studio 17 2022" -A x64 -DWERS_BUILD_TESTS=ON -DWERS_WITH_WHISPER=ON > "%LOGS%\configure.log" 2>&1
+    cmake -S "%ROOT%\src-tree" -B "%BUILD%" -G "Visual Studio 17 2022" -A x64 -DWERS_BUILD_TESTS=ON -DWERS_WITH_WHISPER=ON -DWERS_BUILD_PROBE=ON > "%LOGS%\configure.log" 2>&1
     if errorlevel 1 ( echo FAILED configure>> "%STATUS%" & goto end )
     echo build %TIME%>> "%STATUS%"
     echo   Kompilacja...
-    cmake --build "%BUILD%" --config Release --parallel --target wers_tests wers_plugin_tests wers_ui_shots wers_cli WERS_VST3 -- /m /nologo /v:m > "%LOGS%\build.log" 2>&1
+    cmake --build "%BUILD%" --config Release --parallel --target wers_tests wers_plugin_tests wers_ui_shots wers_cli WERS_VST3 WersProbe_VST3 -- /m /nologo /v:m > "%LOGS%\build.log" 2>&1
     if errorlevel 1 ( echo FAILED build>> "%STATUS%" & goto end )
     echo PASSED build %TIME%>> "%STATUS%"
     if exist "%ROOT%\WERS.vst3" rmdir /s /q "%ROOT%\WERS.vst3"
@@ -80,25 +80,10 @@ if not errorlevel 1 (
 )
 
 echo %JOB% | findstr /c:"model" >nul
-if not errorlevel 1 (
-    rem The speech model from the official whisper.cpp repository, then a transcription of the test vocal.
-    set "MODELS=%APPDATA%\WERS\models"
-    if not exist "!MODELS!" mkdir "!MODELS!"
-    if not exist "!MODELS!\ggml-small-q5_1.bin" (
-        echo model download %TIME%>> "%STATUS%"
-        echo   Pobieranie modelu mowy, 181 MB...
-        curl -L -f -o "!MODELS!\ggml-small-q5_1.part" https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin >> "%LOGS%\tools.log" 2>&1
-        if not errorlevel 1 move /y "!MODELS!\ggml-small-q5_1.part" "!MODELS!\ggml-small-q5_1.bin" >nul
-    )
-    powershell -NoProfile -Command "(Get-Item '!MODELS!\ggml-small-q5_1.bin').Length; (Get-FileHash '!MODELS!\ggml-small-q5_1.bin' -Algorithm SHA1).Hash" > "%LOGS%\model_info.txt" 2>&1
-    copy /y "!MODELS!\ggml-small-q5_1.bin" "%ROOT%\ggml-small-q5_1.bin" >nul
-    if exist "%ROOT%\testdata\vocal_dry.wav" (
-        echo transcribe %TIME%>> "%STATUS%"
-        echo   Rozpoznawanie tekstu na wokalu testowym...
-        "%BUILD%\tools\Release\wers_cli.exe" "%ROOT%\testdata\vocal_dry.wav" "%ROOT%\testdata\beat.wav" --model "!MODELS!\ggml-small-q5_1.bin" --depth 0.4 --dump "%LOGS%\words.tsv" > "%LOGS%\cli.log" 2>&1
-        if errorlevel 1 ( echo FAILED transcribe>> "%STATUS%" ) else ( echo PASSED transcribe>> "%STATUS%" )
-    )
-)
+if not errorlevel 1 call :transcribe ggml-small-q5_1 words
+
+echo %JOB% | findstr /c:"turbo" >nul
+if not errorlevel 1 call :transcribe ggml-large-v3-turbo-q5_0 words_turbo
 
 echo %JOB% | findstr /c:"install" >nul
 if not errorlevel 1 (
@@ -108,6 +93,8 @@ if not errorlevel 1 (
     if exist "!TARGET!\WERS.vst3" rmdir /s /q "!TARGET!\WERS.vst3"
     xcopy /e /i /q /y "%VST%" "!TARGET!\WERS.vst3" >> "%LOGS%\tools.log" 2>&1
     if errorlevel 1 ( echo FAILED install>> "%STATUS%" ) else ( echo PASSED install !TARGET!>> "%STATUS%" )
+    if exist "!TARGET!\WERS Probe.vst3" rmdir /s /q "!TARGET!\WERS Probe.vst3"
+    xcopy /e /i /q /y "%BUILD%\tools\probe\WersProbe_artefacts\Release\VST3\WERS Probe.vst3" "!TARGET!\WERS Probe.vst3" >> "%LOGS%\tools.log" 2>&1
 )
 
 echo DONE %DATE% %TIME%>> "%STATUS%"
@@ -117,3 +104,21 @@ echo.
 echo   Koniec. To okno zamknie sie za minute.
 timeout /t 60 /nobreak >nul
 endlocal
+exit /b 0
+
+:transcribe
+rem A speech model from the official whisper.cpp repository, then a transcription of the test vocal.
+set "MODELS=%APPDATA%\WERS\models"
+if not exist "%MODELS%" mkdir "%MODELS%"
+if not exist "%MODELS%\%~1.bin" (
+    echo download %~1 %TIME%>> "%STATUS%"
+    echo   Pobieranie modelu mowy %~1...
+    curl -L -f -o "%MODELS%\%~1.part" https://huggingface.co/ggerganov/whisper.cpp/resolve/main/%~1.bin >> "%LOGS%\tools.log" 2>&1
+    if not errorlevel 1 move /y "%MODELS%\%~1.part" "%MODELS%\%~1.bin" >nul
+)
+powershell -NoProfile -Command "(Get-Item '%MODELS%\%~1.bin').Length; (Get-FileHash '%MODELS%\%~1.bin' -Algorithm SHA1).Hash" > "%LOGS%\%~1_info.txt" 2>&1
+echo transcribe %~1 start %TIME%>> "%STATUS%"
+echo   Rozpoznawanie tekstu: %~1...
+"%BUILD%\tools\Release\wers_cli.exe" "%ROOT%\testdata\vocal_dry.wav" "%ROOT%\testdata\beat.wav" --model "%MODELS%\%~1.bin" --depth 0.4 --dump "%LOGS%\%~2.tsv" > "%LOGS%\%~2.log" 2>&1
+if errorlevel 1 ( echo FAILED transcribe %~1>> "%STATUS%" ) else ( echo PASSED transcribe %~1 %TIME%>> "%STATUS%" )
+exit /b 0
