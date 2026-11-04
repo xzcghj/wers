@@ -93,9 +93,16 @@ private:
 class LinkHub {
 public:
     static std::shared_ptr<LinkHub> get();
-    LinkGroup& group(int index) noexcept { return groups_[static_cast<size_t>(std::clamp(index, 0, kLinkGroups - 1))]; }
+    // Each open project has its own groups, so two songs open in tabs of a host never mix.
+    // A group lives as long as the hub, so a reference to it stays good. Not realtime.
+    LinkGroup& group(int index, const void* project = nullptr);
 private:
-    std::array<LinkGroup, kLinkGroups> groups_{};
+    struct Project {
+        const void* key;
+        std::unique_ptr<std::array<LinkGroup, kLinkGroups>> groups;
+    };
+    std::mutex mutex_;
+    std::vector<Project> projects_;
 };
 
 } // namespace wers

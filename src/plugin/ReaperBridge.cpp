@@ -38,6 +38,10 @@ void* ReaperBridge::parentTrack() const noexcept {
     return track;
 }
 
+const void* ReaperBridge::project() const noexcept {
+    return host_ != nullptr ? reaperHost(host_)->getReaperParent(3) : nullptr;
+}
+
 float ReaperBridge::trackGainDb() const noexcept {
     void* track = parentTrack();
     if (track == nullptr || getValue_ == nullptr) return 0.0f;

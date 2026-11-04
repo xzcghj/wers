@@ -569,6 +569,20 @@ TEST_CASE("rough word times land on the real syllables") {
     }
 }
 
+TEST_CASE("a word whose syllable has no peak of its own still gets a real length") {
+    // Three syllables only, but four words of one syllable each: one must share.
+    const std::vector<double> starts{ 1.0, 1.25, 1.5 };
+    const auto f = computeFrames(syllableVoice(starts, 0.2, 3.0), {});
+    const std::vector<std::string> names{ "tam", "gdzie", "ty", "dom" };
+    std::vector<TimeSpan> spans{ { 0.95, 1.2 }, { 1.2, 1.3 }, { 1.3, 1.5 }, { 1.5, 1.75 } };
+    snapWordsToSyllables(f, names, spans);
+    for (size_t w = 0; w < spans.size(); ++w) {
+        CAPTURE(w);
+        CHECK(spans[w].t1 - spans[w].t0 >= 0.09);
+        if (w > 0) CHECK(spans[w].t0 >= spans[w - 1].t1);
+    }
+}
+
 TEST_CASE("snapping never breaks the order, whatever it is given") {
     // Peaks that do not match the words at all, a word with no vowel, identical times, empty text.
     std::vector<double> starts{ 1.0, 1.3, 1.6, 4.0, 4.1, 4.2 };

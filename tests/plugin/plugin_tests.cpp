@@ -574,9 +574,13 @@ public:
         if (std::strcmp(name, "ValidatePtr2") == 0) return reinterpret_cast<void*>(&fakeValidate);
         return nullptr;
     }
-    void* PLUGIN_API getReaperParent(Steinberg::uint32 what) override { return what == 1 ? reinterpret_cast<void*>(std::intptr_t{ 1 }) : nullptr; }
+    void* PLUGIN_API getReaperParent(Steinberg::uint32 what) override {
+        if (what == 1) return reinterpret_cast<void*>(std::intptr_t{ 1 });
+        return what == 3 ? project : nullptr;
+    }
     void* PLUGIN_API reaperExtended(Steinberg::uint32, void*, void*, void*) override { return nullptr; }
     int refs = 1;
+    void* project = nullptr;
 };
 
 class NotReaper final : public Steinberg::FUnknown {
@@ -617,6 +621,22 @@ TEST_CASE("REAPER: a vocal instance passes the faders on to the scores and to th
     REQUIRE(vocal.group() != nullptr);
     REQUIRE(vocal.linkSlot() >= 0);
     CHECK(vocal.group()->vocalFaderDb(vocal.linkSlot()) == doctest::Approx(-4.02f).epsilon(0.01));
+}
+
+TEST_CASE("REAPER: instances in different project tabs never link, in the same project they do") {
+    int projectA = 0, projectB = 0;
+    FakeReaper hostA, hostA2, hostB;
+    hostA.project = &projectA; hostA2.project = &projectA; hostB.project = &projectB;
+    WersProcessor vocalA, beatA, vocalB;
+    vocalA.getVST3ClientExtensions()->setIHostApplication(&hostA);
+    beatA.getVST3ClientExtensions()->setIHostApplication(&hostA2);
+    vocalB.getVST3ClientExtensions()->setIHostApplication(&hostB);
+    beatA.chooseRole(Role::Beat);
+    pump(300);
+    CHECK(vocalA.group() == beatA.group());
+    CHECK(vocalA.group() != vocalB.group());
+    CHECK(vocalA.group()->beatCount() == 1);
+    CHECK(vocalB.group()->beatCount() == 0);
 }
 
 TEST_CASE("every instance sees one and the same model manager") {

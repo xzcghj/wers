@@ -1,6 +1,7 @@
 // Offline driver for the whole analysis chain on real stems. It behaves like a host: audio goes block
 // by block through the same classes the plugin uses.
 #include "WavIO.h"
+#include "analysis/HelperProtocol.h"
 #include "analysis/SongSession.h"
 #include "dsp/Fonem.h"
 #include "dsp/Place.h"
@@ -25,6 +26,44 @@ std::vector<float> toMono(const wav::Audio& a) {
 void feed(TimelineStore& st, const std::vector<float>& x) {
     for (size_t p = 0; p < x.size(); p += 512) st.capture(x.data() + p, static_cast<int>(std::min<size_t>(512, x.size() - p)), static_cast<int64_t>(p));
 }
+// Keeps what the model said, so word timing can be tuned later without running the model again.
+class Recording final : public Recognizer {
+public:
+    Recording(std::unique_ptr<Recognizer> inner, std::string file) : inner_(std::move(inner)), file_(std::move(file)) {}
+    std::vector<RecognizedWord> transcribe(const std::vector<float>& pcm, const std::vector<Region>& regions, const RecognizerOptions& opt,
+                                           const std::atomic<bool>& cancel, const std::function<void(float)>& progress) override {
+        auto words = inner_->transcribe(pcm, regions, opt, cancel, progress);
+        std::ofstream o(file_ + (++calls_ == 1 ? "" : ".mix"), std::ios::binary);
+        for (const auto& w : words) o << helper::wordLine(w);
+        return words;
+    }
+    bool failed() const noexcept override { return inner_->failed(); }
+private:
+    std::unique_ptr<Recognizer> inner_;
+    std::string file_;
+    int calls_ = 0;
+};
+
+class Replay final : public Recognizer {
+public:
+    explicit Replay(std::string file) : file_(std::move(file)) {}
+    std::vector<RecognizedWord> transcribe(const std::vector<float>&, const std::vector<Region>&, const RecognizerOptions&,
+                                           const std::atomic<bool>&, const std::function<void(float)>&) override {
+        std::vector<RecognizedWord> words;
+        std::ifstream in(file_ + (++calls_ == 1 ? "" : ".mix"), std::ios::binary);
+        std::string line, error;
+        float progress = 0.0f;
+        while (std::getline(in, line)) {
+            RecognizedWord w;
+            if (helper::parseLine(line, progress, w, error) == helper::LineKind::Word) words.push_back(std::move(w));
+        }
+        return words;
+    }
+private:
+    std::string file_;
+    int calls_ = 0;
+};
+
 const char* deviceName(int d) { static const char* n[] = { "Telefon", "Pchelki", "Auto", "Laptop", "Studio" }; return n[d]; }
 }
 
@@ -33,7 +72,7 @@ int main(int argc, char** argv) {
         std::cerr << "usage: wers_cli vocal.wav beat.wav [--model path] [--lyrics file] [--depth 0..1] [--fix-all] [--render dir] [--dump file]\n";
         return 2;
     }
-    std::string model, lyricsFile, renderDir, dumpFile;
+    std::string model, lyricsFile, renderDir, dumpFile, rawDump, replay;
     float depth = 0.0f; bool fixAll = false; bool dtw = true;
     float vocalGain = 1.0f;
     for (int i = 3; i < argc; ++i) {
@@ -44,6 +83,8 @@ int main(int argc, char** argv) {
         else if (a == "--vocal-gain-db" && i + 1 < argc) vocalGain = dbToGain(static_cast<float>(std::atof(argv[++i])));
         else if (a == "--fix-all") fixAll = true;
         else if (a == "--no-dtw") dtw = false;
+        else if (a == "--raw-dump" && i + 1 < argc) rawDump = argv[++i];
+        else if (a == "--replay" && i + 1 < argc) replay = argv[++i];
         else if (a == "--render" && i + 1 < argc) renderDir = argv[++i];
         else if (a == "--dump" && i + 1 < argc) dumpFile = argv[++i];
     }
@@ -67,15 +108,17 @@ int main(int argc, char** argv) {
     session.setPlaceDepth(depth);
     if (!lyricsFile.empty()) { std::ifstream in(lyricsFile); std::stringstream ss; ss << in.rdbuf(); session.setLyrics(ss.str()); }
 #if defined(WERS_HAS_WHISPER)
-    if (!model.empty()) session.setRecognizerFactory([model, dtw] {
+    if (!model.empty()) session.setRecognizerFactory([model, dtw, rawDump]() -> std::unique_ptr<Recognizer> {
         std::string err;
         auto r = makeWhisperRecognizer(model, &err, dtw);
-        if (!r) std::cerr << "recognizer: " << err << "\n";
+        if (!r) { std::cerr << "recognizer: " << err << "\n"; return nullptr; }
+        if (!rawDump.empty()) return std::make_unique<Recording>(std::move(r), rawDump);
         return r;
     });
 #else
     if (!model.empty()) std::cerr << "this build has no speech model\n";
 #endif
+    if (!replay.empty()) session.setRecognizerFactory([replay]() -> std::unique_ptr<Recognizer> { return std::make_unique<Replay>(replay); });
 
     const auto t0 = std::chrono::steady_clock::now();
     session.startListening();

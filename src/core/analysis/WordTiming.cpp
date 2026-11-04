@@ -103,7 +103,8 @@ void snapWordsToSyllables(const BandFrames& f, const std::vector<std::string>& w
     // Dynamic programming over words and peaks. cost[i][j]: first i words took first j peaks.
     constexpr float kInfinite = std::numeric_limits<float>::max() / 4.0f;
     constexpr float kSyllableMiss = 1.0f;     // one syllable too many or too few
-    constexpr float kPerSecondOff = 4.0f;     // being a quarter second off counts as one syllable
+    constexpr float kNoPeakAtAll = 0.8f;      // a word with syllables and no peak is rarely right
+    constexpr float kPerSecondOff = 3.0f;     // being a third of a second off counts as one syllable
     constexpr float kFreeMargin = 0.08f;      // the model's timing is trusted this far
     constexpr float kSkipPeak = 0.45f;        // a peak that belongs to no word, like an ad-lib
     constexpr int kMaxExtra = 2;
@@ -125,6 +126,7 @@ void snapWordsToSyllables(const BandFrames& f, const std::vector<std::string>& w
                 const float before = cost[at(i - 1, j - static_cast<size_t>(k))];
                 if (before >= kInfinite) continue;
                 float c = before + kSyllableMiss * static_cast<float>(std::abs(k - want));
+                if (k == 0 && want > 0) c += kNoPeakAtAll;
                 if (k > 0) {
                     const auto first = static_cast<float>(frameCentre(peaks[j - static_cast<size_t>(k)].frame));
                     const auto last = static_cast<float>(frameCentre(peaks[j - 1].frame));
@@ -202,26 +204,52 @@ void snapWordsToSyllables(const BandFrames& f, const std::vector<std::string>& w
             result[k].t1 = frameCentre(endFrame[k]);
         }
     }
-    constexpr double kShortest = 0.06;
+    const auto shortest = [&expected](size_t k) { return expected[k] > 0 ? 0.11 : 0.05; };
     for (size_t k = 0; k < w; ++k) {
         if (startFrame[k] >= 0) continue;
-        // Everything between the last word with peaks and the next one is shared in rough order.
         size_t next = k;
         while (next < w && startFrame[next] < 0) ++next;
-        const double from = k > 0 ? result[k - 1].t1 : std::max(0.0, spans[k].t0 - 0.2);
-        const double to = next < w ? result[next].t0 : spans[w - 1].t1 + 0.2;
-        const size_t runLength = next - k;
-        if (to - from >= kShortest * static_cast<double>(runLength)) {
+        double from = k > 0 ? result[k - 1].t1 : std::max(0.0, spans[k].t0 - 0.2);
+        double to = next < w ? result[next].t0 : spans[w - 1].t1 + 0.2;
+        double need = 0.0, rough = 0.0, weightSum = 0.0;
+        for (size_t q = k; q < next; ++q) {
+            need += shortest(q);
+            rough += std::max(shortest(q), spans[q].t1 - spans[q].t0);
+            weightSum += std::max(0.5, static_cast<double>(expected[q]));
+        }
+        // Too little room: take some from the neighbours, but never their syllable peaks.
+        if (to - from < need) {
+            if (k > 0 && assigned[k - 1].last >= 0) {
+                from = std::min(from, frameCentre(peaks[static_cast<size_t>(assigned[k - 1].last)].frame) + 0.05);
+                result[k - 1].t1 = from;
+            }
+            if (next < w && assigned[next].first >= 0) {
+                to = std::max(to, frameCentre(peaks[static_cast<size_t>(assigned[next].first)].frame) - 0.05);
+                result[next].t0 = to;
+            }
+        }
+        if (to - from > rough * 1.3) {
+            // A real pause around them: they stay near where the model heard them.
+            double t = from;
+            double left = rough;
             for (size_t q = k; q < next; ++q) {
-                const double t0 = std::clamp(spans[q].t0, q == k ? from : result[q - 1].t1, to - kShortest * static_cast<double>(next - q));
-                result[q].t0 = t0;
-                result[q].t1 = std::clamp(spans[q].t1, t0 + kShortest, to - kShortest * static_cast<double>(next - q - 1));
+                const double length = std::max(shortest(q), spans[q].t1 - spans[q].t0);
+                const double start = std::clamp(spans[q].t0, t, std::max(t, to - left));
+                result[q].t0 = start;
+                result[q].t1 = start + length;
+                t = result[q].t1;
+                left -= length;
             }
         } else {
-            // No room at all: these words sit right at the start of the next one and borrow its time.
+            // Shared by syllables, or side by side at the shortest length when even that does not fit.
+            const double available = std::max(to - from, need);
             double t = from;
-            for (size_t q = k; q < next; ++q) { result[q].t0 = t; t += kShortest; result[q].t1 = t; }
-            if (next < w) result[next].t0 = std::max(result[next].t0, t);
+            for (size_t q = k; q < next; ++q) {
+                const double length = std::max(shortest(q), available * std::max(0.5, static_cast<double>(expected[q])) / weightSum);
+                result[q].t0 = t;
+                result[q].t1 = t + length;
+                t = result[q].t1;
+            }
         }
         k = next - 1;
         if (next >= w) break;

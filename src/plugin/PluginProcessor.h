@@ -104,6 +104,7 @@ private:
     std::atomic<int> rtSlot_{ -1 };
     std::atomic<const GroupPlaceControl*> rtControl_{ nullptr };
     int slot_ = -1, appliedGroup_ = -1;
+    const void* appliedProject_ = nullptr;
     std::shared_ptr<TimelineStore> vocalStore_, sideStore_, beatStore_;
     bool beatStoreRegistered_ = false;
     juce::SharedResourcePointer<ModelManager> model_;     // before the session, whose worker thread uses it

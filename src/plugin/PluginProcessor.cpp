@@ -69,7 +69,8 @@ void WersProcessor::applyRoleAndGroup() {
     const int wantRole = juce::jlimit(0, 2, static_cast<int>(apvts_.getRawParameterValue(ids::role)->load()));
     const int wantGroup = juce::jlimit(0, kLinkGroups - 1, static_cast<int>(apvts_.getRawParameterValue(ids::group)->load()));
     const bool roleChanged = wantRole != activeRole_.load();
-    const bool groupChanged = wantGroup != appliedGroup_;
+    const void* project = reaper_.project();
+    const bool groupChanged = wantGroup != appliedGroup_ || project != appliedProject_;
     if (!roleChanged && !groupChanged) return;
 
     // Audio thread stops using the old connections first.
@@ -87,8 +88,9 @@ void WersProcessor::applyRoleAndGroup() {
             beatStoreRegistered_ = false;
         }
     }
-    group_ = &hub_->group(wantGroup);
+    group_ = &hub_->group(wantGroup, project);
     appliedGroup_ = wantGroup;
+    appliedProject_ = project;
     control_.setGroup(group_);
     rtGroup_.store(group_);
 
@@ -308,7 +310,8 @@ void WersProcessor::processWet(float* const* ch, int nc, const float* const* sc,
 }
 
 void WersProcessor::timerCallback() {
-    if (roleDirty_.exchange(false)) applyRoleAndGroup();
+    // The host says which project this instance is in only after it has been created.
+    if (roleDirty_.exchange(false) || reaper_.project() != appliedProject_) applyRoleAndGroup();
     if (group_ == nullptr) return;
 
     const Role r = role();

@@ -133,7 +133,6 @@ if not exist "%MODELS%\%~1.bin" (
 powershell -NoProfile -Command "(Get-Item '%MODELS%\%~1.bin').Length; (Get-FileHash '%MODELS%\%~1.bin' -Algorithm SHA1).Hash" > "%LOGS%\%~1_info.txt" 2>&1
 echo transcribe %~1 start %TIME%>> "%STATUS%"
 echo   Rozpoznawanie tekstu: %~1...
-"%BUILD%\tools\Release\wers_cli.exe" "%ROOT%\testdata\vocal_dry.wav" "%ROOT%\testdata\beat.wav" --model "%MODELS%\%~1.bin" --depth 0.4 --dump "%LOGS%\%~2.tsv" > "%LOGS%\%~2.log" 2>&1
+"%BUILD%\tools\Release\wers_cli.exe" "%ROOT%\testdata\vocal_dry.wav" "%ROOT%\testdata\beat.wav" --model "%MODELS%\%~1.bin" --depth 0.4 --dump "%LOGS%\%~2.tsv" --raw-dump "%LOGS%\%~2_raw.txt" > "%LOGS%\%~2.log" 2>&1
 if errorlevel 1 ( echo FAILED transcribe %~1>> "%STATUS%" ) else ( echo PASSED transcribe %~1 %TIME%>> "%STATUS%" )
-"%BUILD%\tools\Release\wers_cli.exe" "%ROOT%\testdata\vocal_dry.wav" "%ROOT%\testdata\beat.wav" --model "%MODELS%\%~1.bin" --no-dtw --depth 0.4 --dump "%LOGS%\%~2_nodtw.tsv" > "%LOGS%\%~2_nodtw.log" 2>&1
 exit /b 0

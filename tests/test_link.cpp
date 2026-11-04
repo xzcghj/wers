@@ -181,3 +181,14 @@ TEST_CASE("stale detector stays quiet for the analysed vocal and fires for anoth
     CHECK(!same.stale());
     CHECK(diff.stale());
 }
+
+TEST_CASE("open projects do not share their groups") {
+    auto hub = LinkHub::get();
+    int a = 0, b = 0;
+    CHECK(&hub->group(2) == &hub->group(2));
+    CHECK(&hub->group(2, &a) == &hub->group(2, &a));
+    CHECK(&hub->group(2, &a) != &hub->group(2, &b));
+    CHECK(&hub->group(2, &a) != &hub->group(2));
+    CHECK(&hub->group(2, &a) != &hub->group(3, &a));
+    CHECK(&hub->group(100, &a) == &hub->group(kLinkGroups - 1, &a));
+}

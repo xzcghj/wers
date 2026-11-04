@@ -16,6 +16,8 @@ public:
     bool connected() const noexcept { return host_ != nullptr; }
     // Fader of this track and of the folders it passes through, in dB. Zero outside REAPER.
     float trackGainDb() const noexcept;
+    // Tells open projects apart. Null outside REAPER.
+    const void* project() const noexcept;
 private:
     using GetValue = double (*)(void* track, const char* name);
     using GetParent = void* (*)(void* track);

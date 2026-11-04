@@ -12,6 +12,14 @@ std::shared_ptr<LinkHub> LinkHub::get() {
     return hub;
 }
 
+LinkGroup& LinkHub::group(int index, const void* project) {
+    std::lock_guard<std::mutex> g(mutex_);
+    const auto at = static_cast<size_t>(std::clamp(index, 0, kLinkGroups - 1));
+    for (auto& p : projects_) if (p.key == project) return (*p.groups)[at];
+    projects_.push_back({ project, std::make_unique<std::array<LinkGroup, kLinkGroups>>() });
+    return (*projects_.back().groups)[at];
+}
+
 int LinkGroup::claimSlot() {
     std::lock_guard<std::mutex> g(mutex_);
     for (int i = 0; i < kLinkSlots; ++i) {
