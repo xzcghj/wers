@@ -15,6 +15,7 @@ struct SongResult {
     std::vector<Word> words;
     bool hasText = false;        // words come from recognition, not from voice fragments
     bool hasBeat = false;        // a beat signal was heard
+    bool textFailed = false;     // recognition was tried and could not finish
     double endSeconds = 0.0;
     double lufs = -14.0;
 };
@@ -75,7 +76,7 @@ private:
     void workerLoop();
     void runAnalysis(std::vector<float> vocal, std::vector<float> beat, bool hadBeat);
     void rescoreAll();
-    void publish(std::vector<Word> words, bool hasText, bool hasBeat, double end, double lufs);
+    void publish(std::vector<Word> words, bool hasText, bool hasBeat, double end, double lufs, bool textFailed = false);
     void publishPlan(const std::vector<Word>& words);
     bool keepGoing() const noexcept { return !stop_.load() ; }
 

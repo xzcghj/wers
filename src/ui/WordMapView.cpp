@@ -1,4 +1,5 @@
 #include "WordMapView.h"
+#include <algorithm>
 
 namespace wers::ui {
 
@@ -176,19 +177,40 @@ void WordMapView::tick() {
     fixAll_.setButtonText(pl("Napraw wszystkie: ") + juce::String(bad));
 
     // One message at a time below the words, the most important first.
-    juce::String banner;
+    juce::String banner, hint;
     bool showModel = false;
     const auto modelState = proc_.model().state();
+    const bool downloading = modelState == ModelManager::State::Downloading, modelFailed = modelState == ModelManager::State::Failed;
+    const juce::String downloadText = pl("Pobieram model tekstu: ") + juce::String(juce::roundToInt(proc_.model().progress() * 100.0f)) + "%";
+    const juce::String failedText = pl("Nie udało się pobrać modelu tekstu. Sprawdź internet i spróbuj jeszcze raz.");
     if (ready) {
         if (proc_.isStale()) banner = pl("Wokal się zmienił, więc naprawy są wyłączone. Przesłuchaj numer jeszcze raz.");
-        else if (modelState == ModelManager::State::Downloading) banner = pl("Pobieram model tekstu: ") + juce::String(juce::roundToInt(proc_.model().progress() * 100.0f)) + "%";
+        else if (downloading) banner = downloadText;
+        else if (!result_->hasText && !proc_.canRecognise()) banner = pl("Rozpoznawanie tekstu nie działa na tym komputerze, więc widzisz fragmenty czasu.");
+        else if (result_->textFailed) banner = pl("Nie udało się rozpoznać tekstu, więc widzisz fragmenty czasu. Przesłuchaj numer jeszcze raz.");
+        else if (!result_->hasText && modelFailed) { banner = failedText; showModel = true; }
         else if (!result_->hasText && modelState == ModelManager::State::Ready) banner = pl("Model gotowy. Przesłuchaj numer jeszcze raz, a zobaczysz słowa.");
-        else if (!result_->hasText && !recognitionSupported()) banner = pl("Ten komputer nie obsługuje rozpoznawania tekstu, więc widzisz fragmenty czasu.");
-        else if (!result_->hasText) { banner = pl("Widzisz fragmenty czasu. Pobierz model tekstu (181 MB), a zobaczysz słowa."); showModel = modelState != ModelManager::State::Failed; }
+        else if (!result_->hasText) { banner = pl("Widzisz fragmenty czasu. Pobierz model tekstu (181 MB), a zobaczysz słowa."); showModel = true; }
         else if (!result_->hasBeat) banner = pl("Nie słyszałem bitu. Dodaj WERS na ślad bitu i przesłuchaj numer jeszcze raz.");
+    } else if ((phase == SessionPhase::Idle || phase == SessionPhase::Failed) && proc_.canRecognise()) {
+        if (downloading) hint = downloadText;
+        else if (modelFailed) { hint = failedText; showModel = true; }
+        else if (modelState == ModelManager::State::Missing) {
+            hint = pl("Żeby widzieć tekst, a nie czas, pobierz model mowy (181 MB). Działa na tym komputerze, nagranie nigdzie nie wychodzi.");
+            showModel = true;
+        }
     }
     getModel_.setVisible(showModel);
-    if (banner != banner_) { banner_ = banner; repaint(); }
+    if (ready) getModel_.setBounds(getWidth() - kPad - 130, getHeight() - 44, 130, 32);
+    else getModel_.setBounds(kPad, 340, 130, 32);
+    if (banner != banner_ || hint != modelHint_) { banner_ = banner; modelHint_ = hint; repaint(); }
+
+    // A song already heard gets its words as soon as the model arrives, unless that would drop fixes.
+    if (lastModelState_ == ModelManager::State::Downloading && modelState == ModelManager::State::Ready && ready && !result_->hasText && s.canAnalyseAgain()) {
+        const bool anyFix = std::any_of(result_->words.begin(), result_->words.end(), [](const Word& w) { return w.fix.active; });
+        if (!anyFix) s.analyseAgain();
+    }
+    lastModelState_ = modelState;
 
     // Follow the playhead gently unless the user scrolled a moment ago.
     int current = -1;
@@ -297,10 +319,17 @@ void WordMapView::paint(juce::Graphics& g) {
     for (int y = 0; y < getHeight(); y += 24) g.fillRect(0, y, getWidth(), 1);
 
     SongSession& s = proc_.session();
+    const auto paintHint = [&] {
+        if (modelHint_.isEmpty()) return;
+        g.setFont(uiFont(400, 14.0f));
+        g.setColour(colour::legend);
+        g.drawFittedText(modelHint_, kPad, 288, getWidth() - kPad * 2, 44, juce::Justification::topLeft, 2, 1.0f);
+    };
     switch (phase_) {
         case SessionPhase::Idle:
             paintMessage(g, pl("Przesłuchaj numer, a pokażę słowa, które giną."),
                          pl("Dodaj też WERS na ślad bitu i wybierz tam rolę Bit. Potem kliknij przycisk i puść numer od początku do końca. Gdy zatrzymasz odtwarzanie, zacznie się analiza."), -1.0f);
+            paintHint();
             return;
         case SessionPhase::Listening: {
             juce::String line = pl("Puść numer od początku do końca. Po zatrzymaniu zacznę analizę.");
@@ -320,6 +349,7 @@ void WordMapView::paint(juce::Graphics& g) {
             return;
         case SessionPhase::Failed:
             paintMessage(g, pl("Nie słyszałem wokalu."), pl("Sprawdź, czy ten ślad gra podczas odtwarzania, i spróbuj jeszcze raz."), -1.0f);
+            paintHint();
             return;
         case SessionPhase::Ready:
             break;

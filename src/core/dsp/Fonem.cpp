@@ -14,6 +14,9 @@ void Fonem::prepare(double fs) {
     makeupCoef_ = static_cast<float>(onePoleCoeff(1.0, ctrlRate));
     deEssAtt_ = static_cast<float>(onePoleCoeff(0.0015, ctrlRate));
     deEssRel_ = static_cast<float>(onePoleCoeff(0.025, ctrlRate));
+    peakRefCoef_ = onePoleCoeff(2.0, fs);
+    peakNowCoef_ = onePoleCoeff(0.020, fs);
+    satPowerCoef_ = onePoleCoeff(0.200, fs);
     biasTanh_ = std::tanh(bias_);
     const float sech = 1.0f / std::cosh(bias_);
     biasNorm_ = 1.0f / (sech * sech);
@@ -36,6 +39,10 @@ void Fonem::reset() noexcept {
     popTarget_ = satTarget_ = 0.0;
     gainStep_ = deEssStep_ = popStep_ = satStep_ = 0.0;
     prePush_ = 1.0f;
+    peakRef_ = peakNow_ = 0.0;
+    peakHold_ = 0;
+    satBefore_ = satAfter_ = 0.0;
+    satCompDb_ = 0.0f;
     osIdleSamples_ = 0;
     for (auto& c : chan_) {
         c.look.reset(); c.dry.reset(); c.popLp.reset(); c.deEss.reset(); c.os.reset();
@@ -57,17 +64,30 @@ void Fonem::updateControls() noexcept {
     // Vowels: gentle compression towards the running reference, only while the sound is voiced.
     const float level = powerToDb(envPower_);
     const float aggr = 0.7f + 0.7f * p.character;
-    const float ratio = 1.0f + 3.0f * p.density * aggr;
-    const float threshold = m.refDb - 3.0f - 12.0f * p.density;
+    const float ratio = 1.0f + 2.5f * p.density * aggr;
+    const float threshold = m.refDb - 2.0f - 12.0f * p.density;
     const float over = std::max(0.0f, level - threshold);
     const float grTarget = p.density > 0.0f ? -over * (1.0f - 1.0f / ratio) * m.vowel : 0.0f;
     vowelGrDb_ += (grTarget - vowelGrDb_) * (grTarget < vowelGrDb_ ? grAtt_ : grRel_);
-    makeupDb_ += (-vowelGrDb_ * 0.7f - makeupDb_) * makeupCoef_;
+    // Makeup follows what the vowels lost, so the voice keeps its level while consonants come forward.
     if (p.density <= 0.0f) { makeupDb_ *= 0.99f; if (makeupDb_ < 1e-3f) makeupDb_ = 0.0f; }
+    else if (m.vowel > 0.5f) makeupDb_ += (-vowelGrDb_ - makeupDb_) * makeupCoef_;
 
     const float breathDb = -18.0f * p.breath * m.breath;
     const float stopDb = 6.0f * p.attack * m.stop;
-    const float totalDb = vowelGrDb_ + makeupDb_ + breathDb + stopDb;
+    if (p.density <= 0.0f) {
+        satCompDb_ *= 0.99f;
+        if (satCompDb_ < 1e-3f) satCompDb_ = 0.0f;
+    } else if (satAfter_ > 1e-12) {
+        const float lost = std::clamp(powerToDb(satBefore_) - powerToDb(satAfter_), 0.0f, 6.0f);
+        satCompDb_ += (lost - satCompDb_) * makeupCoef_;
+    }
+    float totalDb = vowelGrDb_ + makeupDb_ + satCompDb_ + breathDb + stopDb;
+    if (totalDb > 0.0f) {
+        // No lift may take a sound above the recent highest peak.
+        const float room = static_cast<float>(gainToDb(static_cast<float>(std::max(peakRef_, 1e-6) / std::max(peakNow_, 1e-6))));
+        totalDb = std::min(totalDb, std::max(0.0f, room));
+    }
     gainTarget_ = totalDb == 0.0f ? 1.0 : static_cast<double>(dbToGain(totalDb));
 
     // De-esser follows the centre of the current sibilant, so sz, si and s each get their own band.
@@ -85,9 +105,11 @@ void Fonem::updateControls() noexcept {
     popTarget_ = static_cast<double>(p.clarity * m.stop);
 
     // Saturation is added only on vowels, so consonants never pick up distortion products.
+    // The drive is relative to the recent peak of the voice, so a loud take and a quiet take get the
+    // same colour. At the top of the range the peaks lose about 8 dB, in the middle about 3 dB.
     satTarget_ = static_cast<double>(p.density * m.vowel);
-    drive_ = (1.2f + 3.3f * p.density) * (0.6f + 1.0f * p.character);
-    prePush_ = drive_ / std::clamp(dbToGain(m.refDb), 0.01f, 1.0f);
+    drive_ = (0.4f + 1.4f * p.density) * (0.6f + 0.8f * p.character);
+    prePush_ = drive_ / static_cast<float>(std::clamp(peakRef_, 0.01, 1.0));
 
     const double inv = 1.0 / controlEvery_;
     const auto& c0 = chan_[0];
@@ -107,6 +129,16 @@ void Fonem::process(float* const* ch, int numChannels, int numSamples) noexcept 
         mono /= static_cast<float>(nc);
         classifier_.push(mono);
         envPower_ += (static_cast<double>(mono) * mono - envPower_) * envCoef_;
+        const double peak = std::abs(static_cast<double>(mono));
+        peakRef_ = peak > peakRef_ ? peak : peakRef_ + (peak - peakRef_) * peakRefCoef_;
+        if (peak >= peakNow_) {
+            peakNow_ = peak;
+            peakHold_ = lookahead_ + Halfband2x::kLatency + 2 * controlEvery_; // until it has left through the output
+        } else if (peakHold_ > 0) {
+            --peakHold_;
+        } else {
+            peakNow_ += (peak - peakNow_) * peakNowCoef_;
+        }
 
         if (controlCount_ == 0) updateControls();
         if (++controlCount_ >= controlEvery_) controlCount_ = 0;
@@ -137,6 +169,10 @@ void Fonem::process(float* const* ch, int numChannels, int numSamples) noexcept 
                 const float da = (shape(a) - a) * sat;
                 const float db = (shape(b) - b) * sat;
                 out += s.os.down(da, db);
+                if (c == 0 && s.satAmount > 0.3) {
+                    satBefore_ += (static_cast<double>(dry) * dry - satBefore_) * satPowerCoef_;
+                    satAfter_ += (static_cast<double>(out) * out - satAfter_) * satPowerCoef_;
+                }
             }
             ch[c][i] = out;
         }

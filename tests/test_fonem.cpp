@@ -170,6 +170,59 @@ TEST_CASE("breath control lowers breaths") {
     CHECK(rmsDb(a, bStart + L + 9000, bStart + L + 18800) < rmsDb(b, bStart + L + 9000, bStart + L + 18800) - 6.0);
 }
 
+TEST_CASE("the test voice has the crest factor of a real one") {
+    const auto x = loudPhrase(48000, 6.0);
+    const double crest = peakDb(x) - rmsDb(x);
+    CHECK(crest > 12.0);
+    CHECK(crest < 24.0);
+}
+
+TEST_CASE("density keeps the level and the peaks of a loud voice, and does not wreck it") {
+    const double fs = 48000;
+    const auto x = loudPhrase(fs, 8.0);
+    const int skip = static_cast<int>(fs * 2.0); // long enough for the makeup gain to settle
+    for (float density : { 0.25f, 0.5f, 0.75f, 1.0f }) {
+        for (float character : { 0.0f, 0.5f, 1.0f }) {
+            CAPTURE(density); CAPTURE(character);
+            Fonem f; f.prepare(fs); f.setParams({ density, 0, 0, 0, character });
+            auto y = x;
+            inBlocks(y, 512, [&](float** c, int k, int64_t) { f.process(c, 1, k); });
+            const int L = f.latencySamples();
+            CHECK(std::abs(rmsDb(y, skip + L) - rmsDb(x, skip)) < 2.0);
+            CHECK(peakDb(y) < peakDb(x) + 0.5);
+            CHECK(correlation(x, y, L) > 0.9);
+        }
+    }
+}
+
+TEST_CASE("density does what the name says: the loud and quiet vowels get closer") {
+    const double fs = 48000;
+    // Two alternating vowel levels, 8 dB apart.
+    std::vector<float> x;
+    for (int i = 0; i < 12; ++i) append(x, vowel(150, i % 2 == 0 ? -12.0 : -20.0, static_cast<int>(fs * 0.5), fs));
+    Fonem f; f.prepare(fs); f.setParams({ 0.8f, 0, 0, 0, 0.5f });
+    auto y = x;
+    inBlocks(y, 512, [&](float** c, int k, int64_t) { f.process(c, 1, k); });
+    const int L = f.latencySamples();
+    const int half = static_cast<int>(fs * 0.5);
+    const double loud = rmsDb(y, 8 * half + L + half / 2, 9 * half + L);
+    const double quiet = rmsDb(y, 9 * half + L + half / 2, 10 * half + L);
+    CHECK(loud - quiet < 6.0);
+    CHECK(loud - quiet > 1.0);
+}
+
+TEST_CASE("attack, clarity and breath never push the peaks of a loud voice up") {
+    const double fs = 48000;
+    const auto x = loudPhrase(fs, 6.0);
+    const FonemParams settings[] = { { 0, 0, 1.0f, 0, 0.5f }, { 0, 1.0f, 0, 0, 0.5f }, { 0, 0, 0, 1.0f, 0.5f }, { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f } };
+    for (const auto& p : settings) {
+        Fonem f; f.prepare(fs); f.setParams(p);
+        auto y = x;
+        inBlocks(y, 256, [&](float** c, int k, int64_t) { f.process(c, 1, k); });
+        CHECK(peakDb(y) < peakDb(x) + 0.5);
+    }
+}
+
 TEST_CASE("fonem survives extreme input and settings without NaN") {
     const double fs = 44100;
     Fonem f; f.prepare(fs);

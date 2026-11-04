@@ -39,7 +39,7 @@ if not errorlevel 1 (
     if errorlevel 1 ( echo FAILED configure>> "%STATUS%" & goto end )
     echo build %TIME%>> "%STATUS%"
     echo   Kompilacja...
-    cmake --build "%BUILD%" --config Release --parallel --target wers_tests wers_plugin_tests wers_ui_shots wers_cli WERS_VST3 WersProbe_VST3 -- /m /nologo /v:m > "%LOGS%\build.log" 2>&1
+    cmake --build "%BUILD%" --config Release --parallel --target wers_tests wers_plugin_tests wers_ui_shots wers_cli wers_whisper WERS_VST3 WersProbe_VST3 -- /m /nologo /v:m > "%LOGS%\build.log" 2>&1
     if errorlevel 1 ( echo FAILED build>> "%STATUS%" & goto end )
     echo PASSED build %TIME%>> "%STATUS%"
     if exist "%ROOT%\WERS.vst3" rmdir /s /q "%ROOT%\WERS.vst3"
@@ -82,6 +82,20 @@ if not errorlevel 1 (
 echo %JOB% | findstr /c:"model" >nul
 if not errorlevel 1 call :transcribe ggml-small-q5_1 words
 
+echo %JOB% | findstr /c:"copymodel" >nul
+if not errorlevel 1 (
+    if not exist "%ROOT%\models" mkdir "%ROOT%\models"
+    copy /y "%APPDATA%\WERS\models\ggml-small-q5_1.bin" "%ROOT%\models\ggml-small-q5_1.bin" >nul
+)
+
+echo %JOB% | findstr /c:"nettest" >nul
+if not errorlevel 1 (
+    rem The plugin's own download code against the real address. Downloads 181 MB to the temporary folder.
+    echo nettest %TIME%>> "%STATUS%"
+    "%BUILD%\src\plugin\Release\wers_plugin_tests.exe" -ns -tc="the model downloads*" > "%LOGS%\nettest.log" 2>&1
+    if errorlevel 1 ( echo FAILED nettest>> "%STATUS%" ) else ( echo PASSED nettest %TIME%>> "%STATUS%" )
+)
+
 echo %JOB% | findstr /c:"turbo" >nul
 if not errorlevel 1 call :transcribe ggml-large-v3-turbo-q5_0 words_turbo
 
@@ -121,4 +135,5 @@ echo transcribe %~1 start %TIME%>> "%STATUS%"
 echo   Rozpoznawanie tekstu: %~1...
 "%BUILD%\tools\Release\wers_cli.exe" "%ROOT%\testdata\vocal_dry.wav" "%ROOT%\testdata\beat.wav" --model "%MODELS%\%~1.bin" --depth 0.4 --dump "%LOGS%\%~2.tsv" > "%LOGS%\%~2.log" 2>&1
 if errorlevel 1 ( echo FAILED transcribe %~1>> "%STATUS%" ) else ( echo PASSED transcribe %~1 %TIME%>> "%STATUS%" )
+"%BUILD%\tools\Release\wers_cli.exe" "%ROOT%\testdata\vocal_dry.wav" "%ROOT%\testdata\beat.wav" --model "%MODELS%\%~1.bin" --no-dtw --depth 0.4 --dump "%LOGS%\%~2_nodtw.tsv" > "%LOGS%\%~2_nodtw.log" 2>&1
 exit /b 0

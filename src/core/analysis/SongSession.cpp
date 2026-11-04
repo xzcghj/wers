@@ -311,7 +311,7 @@ void SongSession::runAnalysis(std::vector<float> vocal, std::vector<float> beat,
         language = language_;
     }
     std::vector<Word> words;
-    bool hasText = false;
+    bool hasText = false, textFailed = false;
     if (factory) {
         phase_.store(SessionPhase::Recognizing);
         progress_.store(0.0f);
@@ -322,6 +322,7 @@ void SongSession::runAnalysis(std::vector<float> vocal, std::vector<float> beat,
             opt.language = language;
             opt.prompt = lyrics.substr(0, 800);
             auto recognised = rec->transcribe(vocal, voiceRegions(*frames), opt, cancelJob_, [this](float p) { progress_.store(p); });
+            textFailed = rec->failed();
             rec.reset(); // the model takes a lot of memory, so it goes away right here
             if (cancelJob_.load() || stop_.load()) return;
             if (!lyrics.empty()) recognised = alignToLyrics(recognised, lyrics);
@@ -332,7 +333,9 @@ void SongSession::runAnalysis(std::vector<float> vocal, std::vector<float> beat,
             words.reserve(recognised.size());
             for (size_t i = 0; i < recognised.size(); ++i) {
                 Word w;
-                w.text = recognised[i].text;
+                // Pasted lyrics keep their spelling; recognised text loses the capitals and commas
+                // the model guesses, which mean nothing in a verse.
+                w.text = lyrics.empty() ? normaliseWord(recognised[i].text) : recognised[i].text;
                 w.t0 = spans[i].t0; w.t1 = spans[i].t1;
                 w.confidence = recognised[i].confidence;
                 words.push_back(std::move(w));
@@ -365,16 +368,17 @@ void SongSession::runAnalysis(std::vector<float> vocal, std::vector<float> beat,
         frames_ = frames;
         failure_.clear();
     }
-    publish(std::move(words), hasText, hadBeat, static_cast<double>(vocal.size()) / kAnalysisRate, frames->lufs);
+    publish(std::move(words), hasText, hadBeat, static_cast<double>(vocal.size()) / kAnalysisRate, frames->lufs, textFailed);
     phase_.store(SessionPhase::Ready);
     generation_.fetch_add(1);
 }
 
-void SongSession::publish(std::vector<Word> words, bool hasText, bool hasBeat, double end, double lufs) {
+void SongSession::publish(std::vector<Word> words, bool hasText, bool hasBeat, double end, double lufs, bool textFailed) {
     auto res = std::make_shared<SongResult>();
     res->words = std::move(words);
     res->hasText = hasText;
     res->hasBeat = hasBeat;
+    res->textFailed = textFailed;
     res->endSeconds = end;
     res->lufs = lufs;
     {
@@ -432,7 +436,7 @@ void SongSession::rescoreAll() {
         if (stop_.load()) return;
         scoreAllDevices(*frames, w, depth);
     }
-    publish(std::move(words), old->hasText, old->hasBeat, old->endSeconds, old->lufs);
+    publish(std::move(words), old->hasText, old->hasBeat, old->endSeconds, old->lufs, old->textFailed);
 }
 
 void SongSession::fixWord(int index, Device target) {
@@ -451,7 +455,7 @@ void SongSession::fixWord(int index, Device target) {
         lim.maxCutDb = 3.0f + 5.0f * depth;
         w.fix = planFix(*frames, w, target, depth, lim);
         scoreAllDevices(*frames, w, depth);
-        publish(std::move(words), old->hasText, old->hasBeat, old->endSeconds, old->lufs);
+        publish(std::move(words), old->hasText, old->hasBeat, old->endSeconds, old->lufs, old->textFailed);
     });
 }
 
@@ -470,7 +474,7 @@ void SongSession::undoFix(int index) {
         w.fix = WordFix{};
         if (frames) scoreAllDevices(*frames, w, depth);
         else for (auto& v : w.verdict) v.score = v.baseScore;
-        publish(std::move(words), old->hasText, old->hasBeat, old->endSeconds, old->lufs);
+        publish(std::move(words), old->hasText, old->hasBeat, old->endSeconds, old->lufs, old->textFailed);
     });
 }
 
@@ -496,7 +500,7 @@ void SongSession::fixAllBelow(float threshold, Device target) {
             scoreAllDevices(*frames, w, depth);
             progress_.store(static_cast<float>(done) / static_cast<float>(words.size()));
         }
-        publish(std::move(words), old->hasText, old->hasBeat, old->endSeconds, old->lufs);
+        publish(std::move(words), old->hasText, old->hasBeat, old->endSeconds, old->lufs, old->textFailed);
     });
 }
 
@@ -516,7 +520,7 @@ void SongSession::clearAllFixes() {
             if (frames) scoreAllDevices(*frames, w, depth);
             else for (auto& v : w.verdict) v.score = v.baseScore;
         }
-        publish(std::move(words), old->hasText, old->hasBeat, old->endSeconds, old->lufs);
+        publish(std::move(words), old->hasText, old->hasBeat, old->endSeconds, old->lufs, old->textFailed);
     });
 }
 

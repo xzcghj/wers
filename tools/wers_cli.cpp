@@ -34,7 +34,7 @@ int main(int argc, char** argv) {
         return 2;
     }
     std::string model, lyricsFile, renderDir, dumpFile;
-    float depth = 0.0f; bool fixAll = false;
+    float depth = 0.0f; bool fixAll = false; bool dtw = true;
     float vocalGain = 1.0f;
     for (int i = 3; i < argc; ++i) {
         const std::string a = argv[i];
@@ -43,6 +43,7 @@ int main(int argc, char** argv) {
         else if (a == "--depth" && i + 1 < argc) depth = static_cast<float>(std::atof(argv[++i]));
         else if (a == "--vocal-gain-db" && i + 1 < argc) vocalGain = dbToGain(static_cast<float>(std::atof(argv[++i])));
         else if (a == "--fix-all") fixAll = true;
+        else if (a == "--no-dtw") dtw = false;
         else if (a == "--render" && i + 1 < argc) renderDir = argv[++i];
         else if (a == "--dump" && i + 1 < argc) dumpFile = argv[++i];
     }
@@ -65,12 +66,16 @@ int main(int argc, char** argv) {
     session.setStores(vStore, nullptr);
     session.setPlaceDepth(depth);
     if (!lyricsFile.empty()) { std::ifstream in(lyricsFile); std::stringstream ss; ss << in.rdbuf(); session.setLyrics(ss.str()); }
-    if (!model.empty()) session.setRecognizerFactory([model] {
+#if defined(WERS_HAS_WHISPER)
+    if (!model.empty()) session.setRecognizerFactory([model, dtw] {
         std::string err;
-        auto r = makeWhisperRecognizer(model, &err);
+        auto r = makeWhisperRecognizer(model, &err, dtw);
         if (!r) std::cerr << "recognizer: " << err << "\n";
         return r;
     });
+#else
+    if (!model.empty()) std::cerr << "this build has no speech model\n";
+#endif
 
     const auto t0 = std::chrono::steady_clock::now();
     session.startListening();

@@ -50,3 +50,21 @@ TEST_CASE("tempo change and a very low tempo do not crash or read out of range")
     bool ok = true; for (float v : x) ok = ok && std::isfinite(v);
     CHECK(ok);
 }
+
+TEST_CASE("output stays bounded on a loud voice at every setting and tempo") {
+    for (double fs : { 44100.0, 48000.0 }) {
+        // Tempos where the delay time lands on a whole number of samples, the case that once spiked.
+        for (double bpm : { 60.0, 75.0, 120.0, 150.0, 187.5 }) {
+            for (float amount : { 0.3f, 1.0f }) {
+                for (float width : { 0.0f, 1.0f }) {
+                    CAPTURE(fs); CAPTURE(bpm); CAPTURE(amount); CAPTURE(width);
+                    Space s; s.prepare(fs); s.setParams({ amount, width });
+                    const auto x = loudPhrase(fs, 12.0);
+                    auto y = x;
+                    inBlocks(y, 512, [&](float** ch, int k, int64_t) { s.process(ch, 1, k, bpm); });
+                    CHECK(peakDb(y) < peakDb(x) + 3.0);
+                }
+            }
+        }
+    }
+}

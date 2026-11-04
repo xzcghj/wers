@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include <algorithm>
 
 namespace wers {
 
@@ -82,7 +83,7 @@ public:
         g.drawText(pl("Tekst numeru"), 40, 24, 500, 40, juce::Justification::centredLeft, false);
         g.setFont(uiFont(400, 15.0f));
         g.setColour(colour::legend);
-        g.drawText(pl("Wklej tekst, a WERS poprawi pisownię rozpoznanych słów. Działa przy kolejnej analizie."), 40, 62, getWidth() - 80, 24, juce::Justification::centredLeft, false);
+        g.drawText(pl("Wklej tekst, a WERS poprawi pisownię rozpoznanych słów."), 40, 62, getWidth() - 80, 24, juce::Justification::centredLeft, false);
     }
     void resized() override {
         editor.setBounds(40, 96, getWidth() - 80, getHeight() - 96 - 84);
@@ -221,7 +222,14 @@ void WersEditor::timerCallback() {
 void WersEditor::openLyricsEditor() {
     auto overlay = std::make_unique<LyricsOverlay>(
         juce::String::fromUTF8(proc_.session().lyrics().c_str()),
-        [this](const juce::String& text) { proc_.session().setLyrics(text.toStdString()); },
+        [this](const juce::String& text) {
+            auto& session = proc_.session();
+            session.setLyrics(text.toStdString());
+            // The song is still in memory, so the corrected text can appear without another listen.
+            const auto result = session.result();
+            const bool anyFix = result != nullptr && std::any_of(result->words.begin(), result->words.end(), [](const Word& w) { return w.fix.active; });
+            if (session.canAnalyseAgain() && proc_.model().state() == ModelManager::State::Ready && !anyFix) session.analyseAgain();
+        },
         [this] { juce::MessageManager::callAsync([safe = juce::Component::SafePointer<WersEditor>(this)] { if (safe != nullptr) safe->root_->lyricsOverlay.reset(); }); });
     overlay->setBounds(0, 0, layout::width, layout::height);
     root_->addAndMakeVisible(*overlay);

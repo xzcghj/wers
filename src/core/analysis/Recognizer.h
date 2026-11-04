@@ -27,10 +27,14 @@ public:
     struct Region { size_t start, length; };
     virtual std::vector<RecognizedWord> transcribe(const std::vector<float>& pcm, const std::vector<Region>& regions, const RecognizerOptions& opt,
                                                    const std::atomic<bool>& cancel, const std::function<void(float)>& progress) = 0;
+    // True when the last transcribe could not do its work, which is different from finding no words.
+    virtual bool failed() const noexcept { return false; }
 };
 
-// Returns null when the model cannot be loaded or the CPU lacks AVX2.
-std::unique_ptr<Recognizer> makeWhisperRecognizer(const std::string& modelPath, std::string* error = nullptr);
+// In-process recognizer, linked only into programs that may stop without harming anything: the
+// recognition process and the command line tool. Returns null when the model cannot be loaded or
+// the CPU lacks AVX2. With alignedTimes, word times come from the model's cross-attention (DTW).
+std::unique_ptr<Recognizer> makeWhisperRecognizer(const std::string& modelPath, std::string* error = nullptr, bool alignedTimes = true);
 bool recognitionSupported() noexcept;
 
 // Replaces recognised words by the matching words of pasted lyrics, keeping recognised timing.

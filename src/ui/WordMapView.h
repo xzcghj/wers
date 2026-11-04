@@ -40,7 +40,8 @@ private:
     juce::uint32 lastManualScroll_ = 0;
     SessionPhase phase_ = SessionPhase::Idle;
     float progress_ = 0.0f;
-    juce::String banner_;
+    juce::String banner_, modelHint_;
+    ModelManager::State lastModelState_ = ModelManager::State::Missing;
     int dying_ = 0, fading_ = 0;
 
     FlatButton listen_{ pl("Przesłuchaj numer"), FlatButton::Style::Solid };

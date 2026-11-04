@@ -1,43 +1,15 @@
 #include "Recognizer.h"
-
-#if WERS_HAS_WHISPER
- #include "whisper.h"
- #if defined(_MSC_VER)
-  #include <intrin.h>
- #elif defined(__x86_64__)
-  #include <cpuid.h>
- #endif
-#endif
+#include "whisper.h"
 #include <algorithm>
 #include <thread>
 
 namespace wers {
 
-#if WERS_HAS_WHISPER
-
-bool recognitionSupported() noexcept {
-#if defined(_MSC_VER)
-    int info[4]{};
-    __cpuid(info, 0);
-    if (info[0] < 7) return false;
-    __cpuidex(info, 7, 0);
-    const bool avx2 = (info[1] & (1 << 5)) != 0;
-    __cpuid(info, 1);
-    const bool fma = (info[2] & (1 << 12)) != 0, osxsave = (info[2] & (1 << 27)) != 0, f16c = (info[2] & (1 << 29)) != 0;
-    if (!avx2 || !fma || !f16c || !osxsave) return false;
-    return (_xgetbv(0) & 6) == 6;
-#elif defined(__x86_64__)
-    return __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
-#else
-    return true;
-#endif
-}
-
 namespace {
 
 class WhisperRecognizer final : public Recognizer {
 public:
-    explicit WhisperRecognizer(whisper_context* ctx) : ctx_(ctx) {}
+    WhisperRecognizer(whisper_context* ctx, bool aligned) : ctx_(ctx), aligned_(aligned) {}
     ~WhisperRecognizer() override { whisper_free(ctx_); }
 
     std::vector<RecognizedWord> transcribe(const std::vector<float>& pcm, const std::vector<Region>& regions, const RecognizerOptions& opt,
@@ -69,6 +41,9 @@ public:
             const size_t len = std::min(r.length, pcm.size() - r.start);
             if (len < 1600) continue; // whisper needs at least 100 ms
             if (whisper_full(ctx_, p, pcm.data() + r.start, static_cast<int>(len)) != 0) { done += len; continue; }
+            const size_t firstOfRegion = out.size();
+            const double offset = static_cast<double>(r.start) / 16000.0;
+            const double regionEnd = offset + static_cast<double>(len) / 16000.0;
             const int segs = whisper_full_n_segments(ctx_);
             for (int s = 0; s < segs; ++s) {
                 const char* text = whisper_full_get_segment_text(ctx_, s);
@@ -80,19 +55,29 @@ public:
                 if (normaliseWord(t).empty()) continue;
                 RecognizedWord w;
                 w.text = t;
-                const double offset = static_cast<double>(r.start) / 16000.0;
                 w.t0 = offset + static_cast<double>(whisper_full_get_segment_t0(ctx_, s)) * 0.01;
                 w.t1 = offset + static_cast<double>(whisper_full_get_segment_t1(ctx_, s)) * 0.01;
                 float sum = 0.0f; int n = 0;
                 const int toks = whisper_full_n_tokens(ctx_, s);
+                bool haveAligned = false;
                 for (int k = 0; k < toks; ++k) {
                     if (whisper_full_get_token_id(ctx_, s, k) >= whisper_token_eot(ctx_)) continue;
+                    if (aligned_ && !haveAligned) {
+                        const auto data = whisper_full_get_token_data(ctx_, s, k);
+                        if (data.t_dtw >= 0) { w.t0 = offset + static_cast<double>(data.t_dtw) * 0.01; haveAligned = true; }
+                    }
                     sum += whisper_full_get_token_p(ctx_, s, k);
                     ++n;
                 }
                 w.confidence = n > 0 ? sum / static_cast<float>(n) : 0.0f;
-                if (w.t1 > w.t0) out.push_back(std::move(w));
+                out.push_back(std::move(w));
             }
+            // Aligned times mark where each word starts, so a word lasts until the next one.
+            if (aligned_) {
+                for (size_t i = firstOfRegion; i + 1 < out.size(); ++i) out[i].t1 = out[i + 1].t0;
+            }
+            if (out.size() > firstOfRegion) out.back().t1 = std::min(std::max(out.back().t1, out.back().t0 + 0.08), regionEnd);
+            out.erase(std::remove_if(out.begin() + static_cast<std::ptrdiff_t>(firstOfRegion), out.end(), [](const RecognizedWord& w) { return w.t1 <= w.t0; }), out.end());
             done += len;
             if (progress && total > 0) progress(static_cast<float>(done) / static_cast<float>(total));
         }
@@ -100,11 +85,22 @@ public:
     }
 private:
     whisper_context* ctx_;
+    bool aligned_;
 };
+
+// Which attention heads to align with depends on the size of the model.
+whisper_alignment_heads_preset alignmentHeads(const std::string& path) {
+    if (path.find("large-v3-turbo") != std::string::npos) return WHISPER_AHEADS_LARGE_V3_TURBO;
+    if (path.find("large-v3") != std::string::npos) return WHISPER_AHEADS_LARGE_V3;
+    if (path.find("medium") != std::string::npos) return WHISPER_AHEADS_MEDIUM;
+    if (path.find("base") != std::string::npos) return WHISPER_AHEADS_BASE;
+    if (path.find("tiny") != std::string::npos) return WHISPER_AHEADS_TINY;
+    return WHISPER_AHEADS_SMALL;
+}
 
 } // namespace
 
-std::unique_ptr<Recognizer> makeWhisperRecognizer(const std::string& modelPath, std::string* error) {
+std::unique_ptr<Recognizer> makeWhisperRecognizer(const std::string& modelPath, std::string* error, bool alignedTimes) {
     if (!recognitionSupported()) {
         if (error != nullptr) *error = "cpu";
         return nullptr;
@@ -112,22 +108,16 @@ std::unique_ptr<Recognizer> makeWhisperRecognizer(const std::string& modelPath, 
     whisper_log_set([](ggml_log_level, const char*, void*) {}, nullptr);
     whisper_context_params cp = whisper_context_default_params();
     cp.use_gpu = false;
+    if (alignedTimes) {
+        cp.dtw_token_timestamps = true;
+        cp.dtw_aheads_preset = alignmentHeads(modelPath);
+    }
     whisper_context* ctx = whisper_init_from_file_with_params(modelPath.c_str(), cp);
     if (ctx == nullptr) {
         if (error != nullptr) *error = "model";
         return nullptr;
     }
-    return std::make_unique<WhisperRecognizer>(ctx);
+    return std::make_unique<WhisperRecognizer>(ctx, alignedTimes);
 }
-
-#else
-
-bool recognitionSupported() noexcept { return false; }
-std::unique_ptr<Recognizer> makeWhisperRecognizer(const std::string&, std::string* error) {
-    if (error != nullptr) *error = "unavailable";
-    return nullptr;
-}
-
-#endif
 
 } // namespace wers

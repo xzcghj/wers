@@ -48,6 +48,13 @@ private:
     double gainStep_ = 0.0, deEssStep_ = 0.0, popStep_ = 0.0, satStep_ = 0.0;
     float prePush_ = 1.0f;
     float drive_ = 1.0f, bias_ = 0.12f, biasTanh_ = 0.0f, biasNorm_ = 1.0f;
+    // Recent highest peak, and the peak about to pass through. Gain may lift a sound only up to the
+    // first, and the look-ahead means the gain is already right when the second arrives.
+    double peakRef_ = 0.0, peakNow_ = 0.0, peakRefCoef_ = 0.0, peakNowCoef_ = 0.0;
+    int peakHold_ = 0;
+    // Saturation lowers the level, so the power before and after it is compared and made up for.
+    double satBefore_ = 0.0, satAfter_ = 0.0, satPowerCoef_ = 0.0;
+    float satCompDb_ = 0.0f;
     int osIdleSamples_ = 0;
 };
 

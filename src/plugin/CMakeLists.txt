@@ -33,6 +33,7 @@ target_sources(WERS PRIVATE
     Params.cpp
     PluginProcessor.cpp
     ModelManager.cpp
+    ProcessRecognizer.cpp
     ../ui/Theme.cpp
     ../ui/Controls.cpp
     ../ui/WordMapView.cpp
@@ -69,6 +70,14 @@ target_link_libraries(WERS
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
 
+if(WERS_WITH_WHISPER)
+    # The recognition process travels inside the plugin bundle.
+    add_dependencies(WERS_VST3 wers_whisper)
+    add_custom_command(TARGET WERS_VST3 POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:wers_whisper> $<TARGET_FILE_DIR:WERS_VST3>/$<TARGET_FILE_NAME:wers_whisper>
+        VERBATIM)
+endif()
+
 if(WERS_BUILD_TESTS)
     # JUCE modules are compiled into the WERS target, so the test programs take its headers and
     # definitions without compiling the modules a second time.
@@ -87,5 +96,9 @@ if(WERS_BUILD_TESTS)
     endfunction()
 
     wers_add_plugin_program(wers_plugin_tests ../../tests/plugin/plugin_tests.cpp)
+    if(WERS_WITH_WHISPER)
+        add_dependencies(wers_plugin_tests wers_whisper)
+        target_compile_definitions(wers_plugin_tests PRIVATE "WERS_TEST_HELPER=\"$<TARGET_FILE:wers_whisper>\"")
+    endif()
     wers_add_plugin_program(wers_ui_shots ../../tests/plugin/ui_shots.cpp)
 endif()

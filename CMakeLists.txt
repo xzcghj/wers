@@ -54,6 +54,9 @@ if(WERS_WITH_WHISPER)
 endif()
 
 add_subdirectory(src/core)
+if(WERS_WITH_WHISPER)
+    add_subdirectory(tools/helper)
+endif()
 
 if(WERS_BUILD_TESTS)
     enable_testing()

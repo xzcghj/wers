@@ -150,6 +150,8 @@ TEST_CASE("segmenter finds voice stretches and leaves silence out") {
     for (const auto& s : spans) CHECK(s.t1 - s.t0 < 1.0);
 }
 
+#include "analysis/HelperProtocol.h"
+#include <sstream>
 #include "analysis/SongSession.h"
 #include <thread>
 
@@ -229,7 +231,7 @@ TEST_CASE("session: recognizer words are used, refined and scored, and the model
     s.setRecognizerFactory([&] {
         auto f = std::make_unique<FakeRecognizer>();
         f->calls = &calls;
-        f->words = { { "szeptem", 1.0, 1.4, 0.9f }, { "cisza", 1.5, 1.9, 0.8f } };
+        f->words = { { "Szeptem,", 1.0, 1.4, 0.9f }, { "cisza", 1.5, 1.9, 0.8f } };
         return f;
     });
     r.play(s, 4.0);
@@ -239,7 +241,7 @@ TEST_CASE("session: recognizer words are used, refined and scored, and the model
     CHECK(calls == 1);
     CHECK(res->hasText);
     REQUIRE(res->words.size() == 2);
-    CHECK(res->words[0].text == "szeptem");
+    CHECK(res->words[0].text == "szeptem"); // no capitals or commas guessed by the model
     CHECK(res->words[0].t1 <= res->words[1].t0);
     s.attachLink(nullptr, -1);
 }
@@ -419,6 +421,52 @@ TEST_CASE("session: damaged state is refused and leaves the session usable") {
     CHECK(!t.result());
     CHECK(t.load(blob.data(), blob.size()));
     CHECK(t.result());
+}
+
+TEST_CASE("the recognition job and its answer survive the trip between processes") {
+    std::vector<float> pcm(1000);
+    for (size_t i = 0; i < pcm.size(); ++i) pcm[i] = static_cast<float>(i) * 0.001f;
+    RecognizerOptions opt;
+    opt.language = "pl"; opt.prompt = "księżyc nad miastem"; opt.threads = 3;
+    const std::vector<Recognizer::Region> regions{ { 10, 400 }, { 500, 300 } };
+    std::stringstream stream(std::ios::in | std::ios::out | std::ios::binary);
+    REQUIRE(helper::writeJob(stream, pcm, regions, opt));
+    helper::Job job;
+    REQUIRE(helper::readJob(stream, job));
+    CHECK(job.pcm == pcm);
+    REQUIRE(job.regions.size() == 2);
+    CHECK(job.regions[1].start == 500);
+    CHECK(job.regions[1].length == 300);
+    CHECK(job.options.prompt == opt.prompt);
+    CHECK(job.options.threads == 3);
+
+    std::stringstream bad(std::ios::in | std::ios::out | std::ios::binary);
+    bad << "WJOBxxxxxxxx";
+    helper::Job broken;
+    CHECK(!helper::readJob(bad, broken));
+
+    RecognizedWord w;
+    w.text = "żółć i spacja"; w.t0 = 12.5; w.t1 = 13.25; w.confidence = 0.5f;
+    std::string line = helper::wordLine(w);
+    REQUIRE(line.back() == '\n');
+    line.pop_back();
+    RecognizedWord back;
+    float progress = 0.0f;
+    std::string error;
+    REQUIRE(helper::parseLine(line, progress, back, error) == helper::LineKind::Word);
+    CHECK(back.text == w.text);
+    CHECK(back.t0 == doctest::Approx(12.5));
+    CHECK(back.t1 == doctest::Approx(13.25));
+    CHECK(back.confidence == doctest::Approx(0.5f));
+    line = helper::progressLine(0.25f);
+    line.pop_back();
+    CHECK(helper::parseLine(line, progress, back, error) == helper::LineKind::Progress);
+    CHECK(progress == doctest::Approx(0.25f));
+    CHECK(helper::parseLine("E ok", progress, back, error) == helper::LineKind::End);
+    CHECK(helper::parseLine("X model", progress, back, error) == helper::LineKind::Error);
+    CHECK(error == "model");
+    CHECK(helper::parseLine("garbage", progress, back, error) == helper::LineKind::Unknown);
+    CHECK(helper::parseLine("W 1 2", progress, back, error) == helper::LineKind::Unknown);
 }
 
 TEST_CASE("lyrics replace recognised spelling but keep recognised timing") {

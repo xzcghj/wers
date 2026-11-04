@@ -32,8 +32,8 @@ WersProcessor::WersProcessor()
     beatStore_ = std::make_shared<TimelineStore>();
     session_.setStores(vocalStore_, sideStore_);
     session_.setRecognizerFactory([this]() -> std::unique_ptr<Recognizer> {
-        if (model_.state() != ModelManager::State::Ready) return nullptr;
-        return makeWhisperRecognizer(ModelManager::modelFile().getFullPathName().toStdString());
+        if (model_->state() != ModelManager::State::Ready || !canRecognise()) return nullptr;
+        return std::make_unique<ProcessRecognizer>(ProcessRecognizer::bundledHelper(), ModelManager::modelFile().getFullPathName());
     });
     // Sensible rates until the host prepares us, so nothing is ever uninitialised.
     prepareToPlay(48000.0, kChunk);
@@ -55,6 +55,10 @@ WersProcessor::~WersProcessor() {
         if (slot_ >= 0) group_->releaseSlot(slot_);
         if (beatStoreRegistered_) { group_->removeBeatStore(beatStore_); group_->beatInstanceDelta(-1); }
     }
+}
+
+bool WersProcessor::canRecognise() const {
+    return recognitionSupported() && ProcessRecognizer::bundledHelper().existsAsFile();
 }
 
 void WersProcessor::parameterChanged(const juce::String&, float) {

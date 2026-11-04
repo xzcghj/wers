@@ -480,6 +480,76 @@ TEST_CASE("interface opens and closes in every role and state without trouble") 
     }
 }
 
+TEST_CASE("the model downloads through the plugin's own network code" * doctest::skip()) {
+    ModelManager m;
+    const auto file = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("wers_model_test.bin");
+    file.deleteFile();
+    m.setTargetForTests(file);
+    m.startDownload();
+    for (int i = 0; i < 6000 && m.state() == ModelManager::State::Downloading; ++i) pump(100);
+    CHECK(m.state() == ModelManager::State::Ready);
+    CHECK(file.getSize() == ModelManager::expectedBytes());
+    file.deleteFile();
+}
+
+#ifdef WERS_TEST_HELPER
+TEST_CASE("recognition process: words arrive with Polish letters and progress") {
+    ProcessRecognizer r(juce::File(WERS_TEST_HELPER), ":fake:");
+    const std::vector<float> pcm(32000, 0.0f);
+    std::atomic<bool> cancel{ false };
+    float last = -1.0f;
+    const auto words = r.transcribe(pcm, { { 0, pcm.size() } }, {}, cancel, [&](float p) { last = p; });
+    REQUIRE(words.size() == 4);
+    CHECK(words[0].text == juce::String::fromUTF8("księżyc").toStdString());
+    CHECK(words[3].text == juce::String::fromUTF8("żyję").toStdString());
+    CHECK(words[1].t0 == doctest::Approx(0.6));
+    CHECK(words[1].confidence == doctest::Approx(0.75f));
+    CHECK(last == doctest::Approx(1.0f));
+    CHECK(!r.failed());
+}
+
+TEST_CASE("recognition process: a crash only means no text") {
+    ProcessRecognizer r(juce::File(WERS_TEST_HELPER), ":crash:");
+    const std::vector<float> pcm(16000, 0.0f);
+    std::atomic<bool> cancel{ false };
+    CHECK(r.transcribe(pcm, { { 0, pcm.size() } }, {}, cancel, {}).empty());
+    CHECK(r.failed());
+}
+
+TEST_CASE("recognition process: a model that cannot load is reported as a failure") {
+    ProcessRecognizer r(juce::File(WERS_TEST_HELPER), "this file does not exist.bin");
+    const std::vector<float> pcm(16000, 0.0f);
+    std::atomic<bool> cancel{ false };
+    CHECK(r.transcribe(pcm, { { 0, pcm.size() } }, {}, cancel, {}).empty());
+    CHECK(r.failed());
+}
+
+TEST_CASE("recognition process: cancelling stops it quickly and is not a failure") {
+    ProcessRecognizer r(juce::File(WERS_TEST_HELPER), ":slow:");
+    const std::vector<float> pcm(16000, 0.0f);
+    std::atomic<bool> cancel{ false };
+    std::thread later([&] { std::this_thread::sleep_for(std::chrono::milliseconds(300)); cancel.store(true); });
+    const auto start = std::chrono::steady_clock::now();
+    CHECK(r.transcribe(pcm, { { 0, pcm.size() } }, {}, cancel, {}).empty());
+    later.join();
+    CHECK(std::chrono::steady_clock::now() - start < std::chrono::seconds(3));
+    CHECK(!r.failed());
+}
+#endif
+
+TEST_CASE("recognition process: a missing program is a failure and nothing more") {
+    ProcessRecognizer r(juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("wers_no_such_program"), "model.bin");
+    const std::vector<float> pcm(16000, 0.0f);
+    std::atomic<bool> cancel{ false };
+    CHECK(r.transcribe(pcm, { { 0, pcm.size() } }, {}, cancel, {}).empty());
+    CHECK(r.failed());
+}
+
+TEST_CASE("every instance sees one and the same model manager") {
+    WersProcessor a, b;
+    CHECK(&a.model() == &b.model());
+}
+
 int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI juceInit;
     doctest::Context ctx;

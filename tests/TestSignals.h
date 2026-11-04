@@ -62,6 +62,61 @@ inline std::vector<float> vowel(double f0, double db, int n, double fs) {
     return x;
 }
 
+// A rapped phrase in miniature, with the crest factor of a real voice: peaky glottal pulses shaped by
+// formants, consonant bursts and hiss between syllables, peaks at the given level.
+inline std::vector<float> loudPhrase(double fs, double seconds, double peakDb = 0.0, uint32_t seed = 5u) {
+    const int n = static_cast<int>(fs * seconds);
+    std::vector<float> x(static_cast<size_t>(n), 0.0f);
+    Lcg r(seed);
+    Svf f1, f2, f3, hiss;
+    f1.set(650, 5.0, fs); f2.set(1500, 7.0, fs); f3.set(2800, 8.0, fs); hiss.set(6000, 1.2, fs);
+    const int syllable = static_cast<int>(fs * 0.21);
+    double pulsePhase = 0.0, f0 = 150.0;
+    for (int i = 0; i < n; ++i) {
+        const int pos = i % syllable;
+        const int index = i / syllable;
+        const bool pause = index % 9 == 8;
+        const double t = static_cast<double>(pos) / syllable;
+        double v = 0.0;
+        if (!pause) {
+            if (t < 0.12) { // consonant: a hiss for most syllables, a burst for every third
+                const double noiseValue = hiss.band(r.next());
+                v = (index % 3 == 0 ? (t < 0.03 ? 0.5 : 0.02) : 0.12) * noiseValue;
+            } else {
+                pulsePhase += (f0 + 25.0 * std::sin(i * 2.0 * kPi * 0.7 / fs)) / fs;
+                if (pulsePhase >= 1.0) pulsePhase -= 1.0;
+                const double pulse = pulsePhase < 0.25 ? std::sin(pulsePhase * 4.0 * kPi) : 0.0; // an open glottis for a quarter of the period
+                const double shaped = f1.band(pulse) * 3.0 + f2.band(pulse) * 2.0 + f3.band(pulse);
+                const double env = std::min(1.0, (t - 0.12) / 0.05) * std::min(1.0, (1.0 - t) / 0.15);
+                v = shaped * env * (0.75 + 0.25 * std::sin(index * 1.7));
+            }
+        }
+        x[static_cast<size_t>(i)] = static_cast<float>(v);
+    }
+    float peak = 1e-9f;
+    for (float v : x) peak = std::max(peak, std::abs(v));
+    const float g = static_cast<float>(dbToGainD(peakDb)) / peak;
+    for (auto& v : x) v *= g;
+    return x;
+}
+
+inline double peakDb(const std::vector<float>& x, int from = 0, int to = -1) {
+    if (to < 0) to = static_cast<int>(x.size());
+    float peak = 1e-12f;
+    for (int i = from; i < to; ++i) peak = std::max(peak, std::abs(x[static_cast<size_t>(i)]));
+    return 20.0 * std::log10(static_cast<double>(peak));
+}
+
+// Correlation between y and x, with y running late by the given number of samples.
+inline double correlation(const std::vector<float>& x, const std::vector<float>& y, int late) {
+    double xx = 0, yy = 0, xy = 0;
+    for (size_t i = static_cast<size_t>(late); i < y.size(); ++i) {
+        const double a = x[i - static_cast<size_t>(late)], b = y[i];
+        xx += a * a; yy += b * b; xy += a * b;
+    }
+    return xy / std::sqrt(xx * yy + 1e-30);
+}
+
 inline double rmsDb(const float* x, int n) {
     double e = 0; for (int i = 0; i < n; ++i) e += static_cast<double>(x[i]) * x[i];
     return 10.0 * std::log10(e / std::max(1, n) + 1e-30);

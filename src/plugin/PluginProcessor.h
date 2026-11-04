@@ -1,6 +1,7 @@
 #pragma once
 #include "ModelManager.h"
 #include "Params.h"
+#include "ProcessRecognizer.h"
 #include "analysis/SongSession.h"
 #include "dsp/Fonem.h"
 #include "dsp/Monitor.h"
@@ -46,7 +47,8 @@ public:
     juce::AudioProcessorValueTreeState& state() noexcept { return apvts_; }
     Role role() const noexcept { return static_cast<Role>(activeRole_.load()); }
     SongSession& session() noexcept { return session_; }
-    ModelManager& model() noexcept { return model_; }
+    ModelManager& model() noexcept { return *model_; }
+    bool canRecognise() const;
     LinkGroup* group() const noexcept { return group_; }
     int linkSlot() const noexcept { return slot_; }
     bool isStale() const noexcept { return staleFlag_.load(); }
@@ -101,7 +103,7 @@ private:
     int slot_ = -1, appliedGroup_ = -1;
     std::shared_ptr<TimelineStore> vocalStore_, sideStore_, beatStore_;
     bool beatStoreRegistered_ = false;
-    ModelManager model_;     // before the session, whose worker thread uses it
+    juce::SharedResourcePointer<ModelManager> model_;     // before the session, whose worker thread uses it
     SongSession session_;
 
     std::atomic<int> activeRole_{ 0 };
