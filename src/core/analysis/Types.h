@@ -42,6 +42,7 @@ struct Word {
     std::string text;          // empty when no recognizer ran: shown as a time-labelled fragment
     double t0 = 0.0, t1 = 0.0; // seconds on the project timeline
     float confidence = 1.0f;
+    int8_t heardInMix = -1;    // did the speech model also find this word in vocal plus beat: -1 not checked
     std::array<DeviceVerdict, kNumDevices> verdict{};
     WordFix fix;
     std::vector<std::pair<float, float>> consonants; // consonant spans in seconds

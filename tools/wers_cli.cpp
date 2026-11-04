@@ -106,9 +106,9 @@ int main(int argc, char** argv) {
 
     if (!dumpFile.empty()) {
         std::ofstream o(dumpFile);
-        o << "t0\tt1\ttext\tconf\tphone\tearbuds\tcar\tlaptop\tstudio\tphoneBase\tworstBand\tcause\tcons\tfix\n";
+        o << "t0\tt1\ttext\tconf\theard\tphone\tearbuds\tcar\tlaptop\tstudio\tphoneBase\tworstBand\tcause\tcons\tfix\n";
         for (const auto& w : res->words) {
-            o << w.t0 << '\t' << w.t1 << '\t' << w.text << '\t' << w.confidence;
+            o << w.t0 << '\t' << w.t1 << '\t' << w.text << '\t' << w.confidence << '\t' << static_cast<int>(w.heardInMix);
             for (const auto& v : w.verdict) o << '\t' << v.score;
             o << '\t' << w.verdict[0].baseScore << '\t' << static_cast<int>(w.verdict[0].worstBand) << '\t' << static_cast<int>(w.verdict[0].cause) << '\t' << w.consonants.size() << '\t';
             if (w.fix.active) { for (float x : w.fix.vocalBoostDb) o << x << ','; o << '|'; for (float x : w.fix.beatCutDb) o << x << ','; }

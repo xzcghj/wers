@@ -1,4 +1,5 @@
 #include "SongSession.h"
+#include "WordTiming.h"
 #include <cstring>
 
 #if defined(_WIN32)
@@ -321,15 +322,32 @@ void SongSession::runAnalysis(std::vector<float> vocal, std::vector<float> beat,
             RecognizerOptions opt;
             opt.language = language;
             opt.prompt = lyrics.substr(0, 800);
-            auto recognised = rec->transcribe(vocal, voiceRegions(*frames), opt, cancelJob_, [this](float p) { progress_.store(p); });
+            const auto regions = voiceRegions(*frames);
+            auto recognised = rec->transcribe(vocal, regions, opt, cancelJob_, [this](float p) { progress_.store(p); });
             textFailed = rec->failed();
-            rec.reset(); // the model takes a lot of memory, so it goes away right here
             if (cancelJob_.load() || stop_.load()) return;
+            // The same model on vocal plus beat: an independent check of what survives in the mix.
+            std::vector<int8_t> heard;
+            if (hadBeat && !recognised.empty() && !textFailed) {
+                phase_.store(SessionPhase::CheckingMix);
+                progress_.store(0.0f);
+                generation_.fetch_add(1);
+                std::vector<float> mix(vocal.size());
+                for (size_t i = 0; i < mix.size(); ++i) mix[i] = vocal[i] + (i < beat.size() ? beat[i] : 0.0f);
+                RecognizerOptions mixOptions = opt;
+                mixOptions.prompt.clear(); // the lyrics would tell the model what it should have heard
+                const auto inMix = rec->transcribe(mix, regions, mixOptions, cancelJob_, [this](float p) { progress_.store(p); });
+                if (cancelJob_.load() || stop_.load()) return;
+                if (!rec->failed()) heard = markHeardWords(recognised, inMix);
+            }
+            rec.reset(); // the model takes a lot of memory, so it goes away right here
             if (!lyrics.empty()) recognised = alignToLyrics(recognised, lyrics);
             std::vector<TimeSpan> spans;
+            std::vector<std::string> texts;
             spans.reserve(recognised.size());
-            for (const auto& r : recognised) spans.push_back({ r.t0, r.t1 });
-            refineWordEdges(*frames, spans);
+            texts.reserve(recognised.size());
+            for (const auto& r : recognised) { spans.push_back({ r.t0, r.t1 }); texts.push_back(r.text); }
+            snapWordsToSyllables(*frames, texts, spans);
             words.reserve(recognised.size());
             for (size_t i = 0; i < recognised.size(); ++i) {
                 Word w;
@@ -338,6 +356,7 @@ void SongSession::runAnalysis(std::vector<float> vocal, std::vector<float> beat,
                 w.text = lyrics.empty() ? normaliseWord(recognised[i].text) : recognised[i].text;
                 w.t0 = spans[i].t0; w.t1 = spans[i].t1;
                 w.confidence = recognised[i].confidence;
+                if (i < heard.size()) w.heardInMix = heard[i];
                 words.push_back(std::move(w));
             }
             hasText = !words.empty();
@@ -589,6 +608,7 @@ std::vector<uint8_t> SongSession::save() const {
             put32(o, static_cast<uint32_t>(w.text.size()));
             o.insert(o.end(), w.text.begin(), w.text.end());
             putD(o, w.t0); putD(o, w.t1); putF(o, w.confidence);
+            o.push_back(static_cast<uint8_t>(w.heardInMix + 1));
             for (const auto& v : w.verdict) { putF(o, v.score); putF(o, v.baseScore); o.push_back(static_cast<uint8_t>(v.worstBand + 1)); o.push_back(static_cast<uint8_t>(v.cause)); }
             o.push_back(w.fix.active ? 1 : 0); o.push_back(static_cast<uint8_t>(w.fix.target));
             for (float x : w.fix.vocalBoostDb) putF(o, x);
@@ -639,6 +659,9 @@ bool SongSession::load(const uint8_t* data, size_t size) {
             if (!r.ok()) return false;
             w.text.assign(reinterpret_cast<const char*>(t), len);
             w.t0 = r.f64(); w.t1 = r.f64(); w.confidence = r.f32();
+            const uint8_t* heardByte = r.bytes(1);
+            if (heardByte == nullptr) return false;
+            w.heardInMix = static_cast<int8_t>(std::min<int>(*heardByte, 2) - 1);
             for (auto& v : w.verdict) {
                 v.score = r.f32(); v.baseScore = r.f32();
                 const uint8_t* b = r.bytes(2);

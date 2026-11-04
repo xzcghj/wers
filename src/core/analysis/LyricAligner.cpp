@@ -1,5 +1,7 @@
 #include "Recognizer.h"
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <sstream>
 
 namespace wers {
@@ -71,6 +73,52 @@ std::string normaliseWord(const std::string& word) {
         if (isWordChar(l)) encode(l, out);
     }
     return out;
+}
+
+std::vector<int8_t> markHeardWords(const std::vector<RecognizedWord>& dry, const std::vector<RecognizedWord>& mix) {
+    const size_t n = dry.size(), m = mix.size();
+    std::vector<int8_t> heard(n, 0);
+    if (n == 0 || m == 0) return heard;
+    std::vector<std::u32string> a, b;
+    a.reserve(n); b.reserve(m);
+    for (const auto& w : dry) a.push_back(decode(normaliseWord(w.text)));
+    for (const auto& w : mix) b.push_back(decode(normaliseWord(w.text)));
+    // Words further apart in time than this cannot be the same word.
+    constexpr double kWindow = 1.5;
+    constexpr float kGap = 0.6f, kFar = 10.0f, kSameBelow = 0.4f;
+    const auto spelling = [&](size_t i, size_t j) {
+        const auto len = static_cast<float>(std::max<size_t>({ a[i].size(), b[j].size(), 1u }));
+        return static_cast<float>(editDistance(a[i], b[j])) / len;
+    };
+    const auto at = [m](size_t i, size_t j) { return i * (m + 1) + j; };
+    std::vector<float> dp((n + 1) * (m + 1), 0.0f);
+    std::vector<uint8_t> tb((n + 1) * (m + 1), 0);
+    for (size_t i = 1; i <= n; ++i) { dp[at(i, 0)] = dp[at(i - 1, 0)] + kGap; tb[at(i, 0)] = 1; }
+    for (size_t j = 1; j <= m; ++j) { dp[at(0, j)] = dp[at(0, j - 1)] + kGap; tb[at(0, j)] = 2; }
+    for (size_t i = 1; i <= n; ++i) {
+        for (size_t j = 1; j <= m; ++j) {
+            const bool close = std::abs(dry[i - 1].t0 - mix[j - 1].t0) < kWindow;
+            const float diag = dp[at(i - 1, j - 1)] + (close ? spelling(i - 1, j - 1) : kFar);
+            const float up = dp[at(i - 1, j)] + kGap, left = dp[at(i, j - 1)] + kGap;
+            float best = diag; uint8_t dir = 0;
+            if (up < best) { best = up; dir = 1; }
+            if (left < best) { best = left; dir = 2; }
+            dp[at(i, j)] = best; tb[at(i, j)] = dir;
+        }
+    }
+    size_t i = n, j = m;
+    while (i > 0 || j > 0) {
+        const uint8_t d = tb[at(i, j)];
+        if (i > 0 && j > 0 && d == 0) {
+            if (std::abs(dry[i - 1].t0 - mix[j - 1].t0) < kWindow && spelling(i - 1, j - 1) <= kSameBelow) heard[i - 1] = 1;
+            --i; --j;
+        } else if (i > 0 && (d == 1 || j == 0)) {
+            --i;
+        } else {
+            --j;
+        }
+    }
+    return heard;
 }
 
 std::vector<RecognizedWord> alignToLyrics(const std::vector<RecognizedWord>& rec, const std::string& lyrics) {

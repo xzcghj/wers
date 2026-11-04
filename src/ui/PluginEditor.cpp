@@ -17,6 +17,10 @@ public:
         bypass.setVisible(true);
         bypass.setClickingTogglesState(true);
         bypassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(p.state(), ids::bypass, bypass);
+        groupButton.setTooltip(pl("Wtyczki z tym samym numerem pary współpracują ze sobą: wokal z bitem. Inny numer przydaje się, gdy w jednym projekcie masz kilka numerów."));
+        compare.setTooltip(pl("Wyłącza na chwilę wszystkie naprawy słów, żeby porównać. Nic nie kasuje."));
+        match.setTooltip(pl("Ustawia suwaki jednym kliknięciem na podstawie głośności i widma bitu oraz wokalu."));
+        bypass.setTooltip(pl("Przepuszcza dźwięk bez zmian, z tym samym opóźnieniem."));
     }
     void paint(juce::Graphics& g) override {
         g.fillAll(colour::dark);
@@ -57,6 +61,7 @@ public:
     MasterView master;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
     std::unique_ptr<juce::Component> lyricsOverlay;
+    juce::TooltipWindow tooltips{ this, 500 };
 };
 
 namespace {

@@ -11,6 +11,7 @@ add_library(wers_core STATIC
     analysis/Frames.cpp
     analysis/FixPlanner.cpp
     analysis/LyricAligner.cpp
+    analysis/WordTiming.cpp
     analysis/SongSession.cpp
     analysis/CpuSupport.cpp
     analysis/HelperProtocol.cpp

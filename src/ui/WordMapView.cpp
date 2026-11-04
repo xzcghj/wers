@@ -190,13 +190,13 @@ void WordMapView::tick() {
         else if (result_->textFailed) banner = pl("Nie udało się rozpoznać tekstu, więc widzisz fragmenty czasu. Przesłuchaj numer jeszcze raz.");
         else if (!result_->hasText && modelFailed) { banner = failedText; showModel = true; }
         else if (!result_->hasText && modelState == ModelManager::State::Ready) banner = pl("Model gotowy. Przesłuchaj numer jeszcze raz, a zobaczysz słowa.");
-        else if (!result_->hasText) { banner = pl("Widzisz fragmenty czasu. Pobierz model tekstu (181 MB), a zobaczysz słowa."); showModel = true; }
+        else if (!result_->hasText) { banner = pl("Widzisz fragmenty czasu. Pobierz model tekstu (około 550 MB), a zobaczysz słowa."); showModel = true; }
         else if (!result_->hasBeat) banner = pl("Nie słyszałem bitu. Dodaj WERS na ślad bitu i przesłuchaj numer jeszcze raz.");
     } else if ((phase == SessionPhase::Idle || phase == SessionPhase::Failed) && proc_.canRecognise()) {
         if (downloading) hint = downloadText;
         else if (modelFailed) { hint = failedText; showModel = true; }
         else if (modelState == ModelManager::State::Missing) {
-            hint = pl("Żeby widzieć tekst, a nie czas, pobierz model mowy (181 MB). Działa na tym komputerze, nagranie nigdzie nie wychodzi.");
+            hint = pl("Żeby widzieć tekst, a nie czas, pobierz model mowy (około 550 MB). Działa na tym komputerze, nagranie nigdzie nie wychodzi.");
             showModel = true;
         }
     }
@@ -293,6 +293,15 @@ void WordMapView::paintWords(juce::Graphics& g) {
             }
         }
     }
+    // A thin mark on the right edge shows there is more of the song to scroll to.
+    const float visibleLines = static_cast<float>(area.getHeight()) / kRowH;
+    if (static_cast<float>(lines_) > visibleLines) {
+        const float trackH = static_cast<float>(area.getHeight()), barH = juce::jmax(24.0f, trackH * visibleLines / static_cast<float>(lines_));
+        const float top = (trackH - barH) * juce::jlimit(0.0f, 1.0f, scroll_ / (static_cast<float>(lines_) - visibleLines));
+        g.setColour(colour::paper.withAlpha(0.35f));
+        g.fillRoundedRectangle(static_cast<float>(getWidth()) - 10.0f, static_cast<float>(area.getY()) + top, 4.0f, barH, 2.0f);
+    }
+
     // Legend, then the current message.
     int x = kPad;
     const int y = getHeight() - 30;
@@ -343,6 +352,9 @@ void WordMapView::paint(juce::Graphics& g) {
             return;
         case SessionPhase::Recognizing:
             paintMessage(g, pl("Rozpoznaję tekst."), pl("Model działa na tym komputerze, nagranie nigdzie nie wychodzi. Dłuższy numer zajmie kilka minut."), progress_);
+            return;
+        case SessionPhase::CheckingMix:
+            paintMessage(g, pl("Sprawdzam tekst w miksie."), pl("Ten sam model słucha teraz wokalu razem z bitem, żeby sprawdzić, które słowa przetrwały."), progress_);
             return;
         case SessionPhase::Scoring:
             paintMessage(g, pl("Oceniam słowa."), pl("Sprawdzam każde słowo na pięciu urządzeniach."), progress_);

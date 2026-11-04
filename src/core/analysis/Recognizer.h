@@ -39,6 +39,9 @@ bool recognitionSupported() noexcept;
 
 // Replaces recognised words by the matching words of pasted lyrics, keeping recognised timing.
 std::vector<RecognizedWord> alignToLyrics(const std::vector<RecognizedWord>& recognised, const std::string& lyrics);
+// For each word of the dry vocal: 1 when the same word was also recognised around the same time in
+// the mix, 0 when not. The two transcripts are compared in order, so a repeated word is not confused.
+std::vector<int8_t> markHeardWords(const std::vector<RecognizedWord>& dry, const std::vector<RecognizedWord>& mix);
 // Lower case, no punctuation. UTF-8 aware for Polish letters.
 std::string normaliseWord(const std::string& word);
 

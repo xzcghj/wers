@@ -90,7 +90,7 @@ if not errorlevel 1 (
 
 echo %JOB% | findstr /c:"nettest" >nul
 if not errorlevel 1 (
-    rem The plugin's own download code against the real address. Downloads 181 MB to the temporary folder.
+    rem The plugin's own download code against the real address. Downloads 547 MB to the temporary folder.
     echo nettest %TIME%>> "%STATUS%"
     "%BUILD%\src\plugin\Release\wers_plugin_tests.exe" -ns -tc="the model downloads*" > "%LOGS%\nettest.log" 2>&1
     if errorlevel 1 ( echo FAILED nettest>> "%STATUS%" ) else ( echo PASSED nettest %TIME%>> "%STATUS%" )

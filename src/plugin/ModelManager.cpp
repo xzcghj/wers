@@ -4,13 +4,13 @@ namespace wers {
 
 juce::File ModelManager::modelFile() {
     return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-        .getChildFile("WERS").getChildFile("models").getChildFile("ggml-small-q5_1.bin");
+        .getChildFile("WERS").getChildFile("models").getChildFile("ggml-large-v3-turbo-q5_0.bin");
 }
 
-juce::int64 ModelManager::expectedBytes() { return 190085487; }
+juce::int64 ModelManager::expectedBytes() { return 574041195; }
 
 ModelManager::ModelManager()
-    : source_("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin"), target_(modelFile()), expected_(expectedBytes()) {
+    : source_("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin"), target_(modelFile()), expected_(expectedBytes()) {
     if (target_.existsAsFile() && target_.getSize() == expected_) state_ = State::Ready;
 }
 

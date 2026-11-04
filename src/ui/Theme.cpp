@@ -43,6 +43,9 @@ WersLook::WersLook() {
     setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     setColour(juce::TextEditor::focusedOutlineColourId, colour::yellow);
     setColour(juce::CaretComponent::caretColourId, colour::ground);
+    setColour(juce::TooltipWindow::backgroundColourId, colour::paper);
+    setColour(juce::TooltipWindow::textColourId, colour::ground);
+    setColour(juce::TooltipWindow::outlineColourId, colour::line);
 }
 
 void WersLook::drawLinearSlider(juce::Graphics& g, int x, int y, int width, int height, float sliderPos, float, float, juce::Slider::SliderStyle, juce::Slider& s) {

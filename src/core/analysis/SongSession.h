@@ -20,7 +20,7 @@ struct SongResult {
     double lufs = -14.0;
 };
 
-enum class SessionPhase : int { Idle = 0, Listening, Measuring, Recognizing, Scoring, Ready, Failed };
+enum class SessionPhase : int { Idle = 0, Listening, Measuring, Recognizing, CheckingMix, Scoring, Ready, Failed };
 
 // What "Dopasuj do bitu" suggests.
 struct SuggestedSettings { float density, clarity, attack, breath, place, space, characterX, characterY; bool valid = false; };

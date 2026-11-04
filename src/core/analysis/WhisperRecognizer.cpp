@@ -109,6 +109,7 @@ std::unique_ptr<Recognizer> makeWhisperRecognizer(const std::string& modelPath, 
     whisper_context_params cp = whisper_context_default_params();
     cp.use_gpu = false;
     if (alignedTimes) {
+        cp.flash_attn = false; // the library turns aligned times off otherwise
         cp.dtw_token_timestamps = true;
         cp.dtw_aheads_preset = alignmentHeads(modelPath);
     }

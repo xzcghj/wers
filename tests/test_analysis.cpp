@@ -151,6 +151,7 @@ TEST_CASE("segmenter finds voice stretches and leaves silence out") {
 }
 
 #include "analysis/HelperProtocol.h"
+#include "analysis/WordTiming.h"
 #include <sstream>
 #include "analysis/SongSession.h"
 #include <thread>
@@ -158,13 +159,15 @@ TEST_CASE("segmenter finds voice stretches and leaves silence out") {
 namespace {
 struct FakeRecognizer final : Recognizer {
     std::vector<RecognizedWord> words;
+    std::vector<RecognizedWord> wordsInMix; // the second call is the check on the mix
+    int transcribes = 0;
     std::atomic<int>* calls = nullptr;
     int slowMs = 0;
     std::vector<RecognizedWord> transcribe(const std::vector<float>&, const std::vector<Region>&, const RecognizerOptions&, const std::atomic<bool>& cancel, const std::function<void(float)>& progress) override {
         if (calls) ++*calls;
         for (int i = 0; i < slowMs && !cancel.load(); i += 5) std::this_thread::sleep_for(std::chrono::milliseconds(5));
         if (progress) progress(1.0f);
-        return words;
+        return ++transcribes == 2 ? wordsInMix : words;
     }
 };
 
@@ -222,7 +225,7 @@ TEST_CASE("session: analysis without recognizer gives scored fragments and a pla
     s.attachLink(nullptr, -1);
 }
 
-TEST_CASE("session: recognizer words are used, refined and scored, and the model factory runs once per analysis") {
+TEST_CASE("session: recognizer words are used, refined and scored, and the model listens twice: vocal, then mix") {
     Rig r;
     SongSession s;
     s.attachLink(&r.group, r.slot);
@@ -238,12 +241,51 @@ TEST_CASE("session: recognizer words are used, refined and scored, and the model
     s.waitIdle();
     auto res = s.result();
     REQUIRE(res);
-    CHECK(calls == 1);
+    CHECK(calls == 2);
     CHECK(res->hasText);
     REQUIRE(res->words.size() == 2);
     CHECK(res->words[0].text == "szeptem"); // no capitals or commas guessed by the model
     CHECK(res->words[0].t1 <= res->words[1].t0);
     s.attachLink(nullptr, -1);
+}
+
+TEST_CASE("session: the model also listens to the mix and marks what it no longer hears") {
+    Rig r;
+    SongSession s;
+    s.attachLink(&r.group, r.slot);
+    s.setStores(r.vs, nullptr);
+    s.setRecognizerFactory([&] {
+        auto f = std::make_unique<FakeRecognizer>();
+        f->words = { { "szeptem", 1.0, 1.4, 0.9f }, { "cisza", 1.5, 1.9, 0.8f }, { "miasto", 2.0, 2.4, 0.8f } };
+        f->wordsInMix = { { "szeptem", 1.05, 1.4, 0.9f }, { "miastom", 2.05, 2.4, 0.5f } };
+        return f;
+    });
+    r.play(s, 4.0);
+    s.waitIdle();
+    auto res = s.result();
+    REQUIRE(res);
+    REQUIRE(res->words.size() == 3);
+    CHECK(res->words[0].heardInMix == 1);
+    CHECK(res->words[1].heardInMix == 0);
+    CHECK(res->words[2].heardInMix == 1); // one wrong letter is still the same word
+
+    const auto saved = s.save();
+    SongSession restored;
+    REQUIRE(restored.load(saved.data(), saved.size()));
+    CHECK(restored.result()->words[1].heardInMix == 0);
+    s.attachLink(nullptr, -1);
+}
+
+TEST_CASE("heard words: order and time decide, so repeated words are not confused") {
+    const std::vector<RecognizedWord> dry{ { "nie", 1.0, 1.2, 1 }, { "wiem", 1.3, 1.5, 1 }, { "nie", 5.0, 5.2, 1 }, { "wiem", 5.3, 5.5, 1 } };
+    const auto heard = markHeardWords(dry, { { "nie", 5.0, 5.2, 1 }, { "wiem", 5.3, 5.5, 1 } });
+    REQUIRE(heard.size() == 4);
+    CHECK(heard[0] == 0);
+    CHECK(heard[1] == 0);
+    CHECK(heard[2] == 1);
+    CHECK(heard[3] == 1);
+    CHECK(markHeardWords({}, {}).empty());
+    CHECK(markHeardWords(dry, {})[0] == 0);
 }
 
 TEST_CASE("session: fix and undo update result and plan") {
@@ -421,6 +463,93 @@ TEST_CASE("session: damaged state is refused and leaves the session usable") {
     CHECK(!t.result());
     CHECK(t.load(blob.data(), blob.size()));
     CHECK(t.result());
+}
+
+TEST_CASE("syllables come from the spelling") {
+    CHECK(syllableCount("miasto") == 2);
+    CHECK(syllableCount("nie") == 1);
+    CHECK(syllableCount("się") == 1);
+    CHECK(syllableCount("ciszy") == 2);
+    CHECK(syllableCount("w") == 0);
+    CHECK(syllableCount("Popłyniemy,") == 4);
+    CHECK(syllableCount("żółć") == 1);
+    CHECK(syllableCount("księżyc") == 2);
+    CHECK(syllableCount("") == 0);
+}
+
+namespace {
+// A voice with syllables at known times: a vowel with a soft start and end, short gaps between them.
+std::vector<float> syllableVoice(const std::vector<double>& starts, double length, double total) {
+    const double fs = kAnalysisRate;
+    std::vector<float> x(static_cast<size_t>(total * fs), 0.0f);
+    const auto v = vowel(150, -14, static_cast<int>(length * fs), fs);
+    for (double t : starts) {
+        const auto start = static_cast<size_t>(t * fs);
+        for (size_t i = 0; i < v.size() && start + i < x.size(); ++i) {
+            const double p = static_cast<double>(i) / static_cast<double>(v.size());
+            x[start + i] += static_cast<float>(v[i] * std::sin(kPi * p));
+        }
+    }
+    return x;
+}
+}
+
+TEST_CASE("peaks are found on every syllable of a fast verse") {
+    std::vector<double> starts;
+    for (int i = 0; i < 24; ++i) starts.push_back(0.5 + i * 0.14); // seven syllables a second
+    const auto f = computeFrames(syllableVoice(starts, 0.12, 5.0), {});
+    const auto peaks = findSyllablePeaks(f, 0, f.count);
+    REQUIRE(peaks.size() == starts.size());
+    for (size_t i = 0; i < peaks.size(); ++i) CHECK(std::abs(frameCentre(peaks[i].frame) - (starts[i] + 0.06)) < 0.03);
+}
+
+TEST_CASE("rough word times land on the real syllables") {
+    // Words of 2, 1, 3, 1 and 2 syllables, then a pause and two more words.
+    const std::vector<int> counts{ 2, 1, 3, 1, 2, 2, 1 };
+    const std::vector<std::string> names{ "mama", "nie", "papuga", "tak", "woda", "kawa", "dom" };
+    std::vector<double> starts;
+    std::vector<TimeSpan> truth;
+    double t = 0.5;
+    for (size_t w = 0; w < counts.size(); ++w) {
+        if (w == 5) t += 1.0;
+        const double begin = t;
+        for (int s = 0; s < counts[w]; ++s) { starts.push_back(t); t += 0.2; }
+        truth.push_back({ begin, t - 0.02 });
+    }
+    const auto f = computeFrames(syllableVoice(starts, 0.18, t + 1.0), {});
+    // The model's times are late or early by up to 170 ms.
+    const std::vector<double> error{ 0.15, -0.12, 0.17, -0.10, 0.12, -0.16, 0.10 };
+    std::vector<TimeSpan> spans = truth;
+    for (size_t w = 0; w < spans.size(); ++w) { spans[w].t0 += error[w]; spans[w].t1 += error[w]; }
+    snapWordsToSyllables(f, names, spans);
+    REQUIRE(spans.size() == truth.size());
+    for (size_t w = 0; w < spans.size(); ++w) {
+        CAPTURE(w);
+        CHECK(std::abs(spans[w].t0 - truth[w].t0) < 0.06);
+        CHECK(std::abs(spans[w].t1 - truth[w].t1) < 0.06);
+        if (w > 0) CHECK(spans[w].t0 >= spans[w - 1].t1);
+        CHECK(spans[w].t1 > spans[w].t0);
+    }
+}
+
+TEST_CASE("snapping never breaks the order, whatever it is given") {
+    // Peaks that do not match the words at all, a word with no vowel, identical times, empty text.
+    std::vector<double> starts{ 1.0, 1.3, 1.6, 4.0, 4.1, 4.2 };
+    const auto f = computeFrames(syllableVoice(starts, 0.2, 6.0), {});
+    const std::vector<std::string> names{ "w", "z", "", "dziewczyna", "a", "szczebrzeszyn", "i", "o" };
+    std::vector<TimeSpan> spans{ { 0.5, 0.5 }, { 0.5, 0.6 }, { 0.6, 0.6 }, { 1.0, 3.0 }, { 3.0, 3.0 }, { 3.1, 5.5 }, { 5.5, 5.6 }, { 5.6, 9.0 } };
+    snapWordsToSyllables(f, names, spans);
+    for (size_t w = 0; w < spans.size(); ++w) {
+        CHECK(spans[w].t1 > spans[w].t0);
+        if (w > 0) CHECK(spans[w].t0 >= spans[w - 1].t1);
+    }
+    std::vector<TimeSpan> none;
+    snapWordsToSyllables(f, {}, none);
+    CHECK(none.empty());
+    const BandFrames emptyFrames;
+    std::vector<TimeSpan> one{ { 1.0, 2.0 } };
+    snapWordsToSyllables(emptyFrames, { "dom" }, one);
+    CHECK(one[0].t0 == 1.0);
 }
 
 TEST_CASE("the recognition job and its answer survive the trip between processes") {

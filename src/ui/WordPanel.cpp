@@ -189,6 +189,11 @@ void WordPanel::paint(juce::Graphics& g) {
         g.drawFittedText(cause, b.removeFromTop(40), juce::Justification::topLeft, 2, 1.0f);
         b.removeFromTop(4);
     }
+    if (w.heardInMix == 0 && !w.fix.active) {
+        g.setFont(uiFont(500, 14.0f));
+        g.drawFittedText(pl("Model mowy nie rozpoznał tego słowa w miksie, choć słyszy je w samym wokalu."), b.removeFromTop(40), juce::Justification::topLeft, 2, 1.0f);
+        b.removeFromTop(4);
+    }
     if (!bad) {
         g.setFont(uiFont(400, 14.0f));
         g.drawFittedText(pl("To słowo jest czytelne na tym urządzeniu. Nie wymaga naprawy."), b.removeFromTop(44), juce::Justification::topLeft, 2, 1.0f);
