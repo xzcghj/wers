@@ -93,7 +93,7 @@ void Space::process(float* const* ch, int numChannels, int numSamples, double bp
         };
         const double dL = readDelay(0, dTimeL_), dR = readDelay(1, dTimeR_);
         dBuf_[0][static_cast<size_t>(dPos_)] = static_cast<float>(in + dBand_[0].band(dR) * feedback);
-        dBuf_[1][static_cast<size_t>(dPos_)] = static_cast<float>(dBand_[1].band(dL) * feedback);
+        dBuf_[1][static_cast<size_t>(dPos_)] = static_cast<float>(in + dBand_[1].band(dL) * feedback);
         if (++dPos_ >= dSize_) dPos_ = 0;
 
         // Reverb: pre-delay into an 8-line FDN with a Householder matrix.
@@ -108,7 +108,7 @@ void Space::process(float* const* ch, int numChannels, int numSamples, double bp
         }
         const double mix = sum * (2.0 / kLines);
         for (size_t k = 0; k < kLines; ++k) {
-            double v = (o[k] - mix) * g_[k] + preOut * 0.35;
+            double v = (o[k] - mix) * g_[k] + preOut * 0.5;
             damp_[k] += (v - damp_[k]) * dampCoef_;
             v = damp_[k];
             line_[k][static_cast<size_t>(pos_[k])] = static_cast<float>(v);
