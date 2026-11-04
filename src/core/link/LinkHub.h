@@ -61,6 +61,11 @@ public:
     bool stale(int slot) const noexcept { return stale_[static_cast<size_t>(slot)].load(std::memory_order_relaxed); }
     void setFixesEnabled(bool on) noexcept { fixesEnabled_.store(on, std::memory_order_relaxed); }
     bool fixesEnabled() const noexcept { return fixesEnabled_.load(std::memory_order_relaxed); }
+    // Depth of Miejsce: the beat instance owns it, a vocal instance may ask for a new value.
+    void publishPlaceDepth(float d) noexcept { placeDepth_.store(d, std::memory_order_relaxed); }
+    float placeDepth() const noexcept { return placeDepth_.load(std::memory_order_relaxed); }
+    void requestPlaceDepth(float d) noexcept { requestedDepth_.store(d, std::memory_order_relaxed); }
+    float takeRequestedPlaceDepth() noexcept { return requestedDepth_.exchange(-1.0f, std::memory_order_relaxed); }
     int vocalCount() const noexcept { return vocals_.load(std::memory_order_relaxed); }
     int beatCount() const noexcept { return beats_.load(std::memory_order_relaxed); }
 private:
@@ -76,6 +81,7 @@ private:
     std::vector<std::shared_ptr<TimelineStore>> beatStores_;
     std::atomic<bool> fixesEnabled_{ true };
     std::atomic<int> vocals_{ 0 }, beats_{ 0 };
+    std::atomic<float> placeDepth_{ 0.0f }, requestedDepth_{ -1.0f };
 };
 
 class LinkHub {

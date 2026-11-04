@@ -1,9 +1,3 @@
-FetchContent_Declare(doctest GIT_REPOSITORY https://github.com/doctest/doctest GIT_TAG v2.5.3 GIT_SHALLOW TRUE)
-FetchContent_GetProperties(doctest)
-if(NOT doctest_POPULATED)
-    FetchContent_Populate(doctest)
-endif()
-
 add_executable(wers_tests
     test_main.cpp
     test_filters.cpp

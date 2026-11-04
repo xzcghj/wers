@@ -15,7 +15,7 @@ class Monitor {
 public:
     void prepare(double fs);
     void reset() noexcept;
-    void setDevice(Device d) noexcept;
+    void setDevice(Device d) noexcept; // cheap when nothing changes, so it can run for every block
     void setNormalisation(NormMode m) noexcept { norm_ = m; }
     // When offline is true the simulation is skipped so it can never end up in an export.
     void process(float* const* ch, int numChannels, int numSamples, bool offline) noexcept;

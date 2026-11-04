@@ -16,7 +16,7 @@ void Monitor::prepare(double fs) {
     gainCoeff_ = onePoleCoeff(0.05, fs);
     limAtt_ = onePoleCoeff(0.005, fs);
     limRel_ = onePoleCoeff(0.1, fs);
-    setDevice(device_);
+    for (auto& f : filter_) f.prepare(device_, fs_);
     reset();
 }
 
@@ -27,6 +27,7 @@ void Monitor::reset() noexcept {
 }
 
 void Monitor::setDevice(Device d) noexcept {
+    if (d == device_) return;
     device_ = d;
     for (auto& f : filter_) f.prepare(d, fs_);
 }

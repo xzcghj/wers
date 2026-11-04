@@ -281,6 +281,32 @@ TEST_CASE("session: fix and undo update result and plan") {
     s.attachLink(nullptr, -1);
 }
 
+TEST_CASE("session: a preview does not outlive the result it was made from") {
+    Rig r;
+    SongSession s;
+    s.attachLink(&r.group, r.slot);
+    s.setStores(r.vs, nullptr);
+    r.play(s, 5.0, -24, -12);
+    s.waitIdle();
+    REQUIRE(s.result());
+    REQUIRE(s.result()->words.size() > 3);
+    s.requestPreview(2, Device::Phone);
+    s.waitIdle();
+    CHECK(s.preview().index == 2);
+    CHECK(s.preview().fix.active);
+    // Any change to the result can change the answer, so the old one must not be shown.
+    s.fixWord(1, Device::Phone);
+    s.waitIdle();
+    CHECK(s.preview().index == -1);
+    s.requestPreview(2, Device::Phone);
+    s.waitIdle();
+    CHECK(s.preview().index == 2);
+    r.play(s, 5.0, -24, -12);
+    s.waitIdle();
+    CHECK(s.preview().index == -1);
+    s.attachLink(nullptr, -1);
+}
+
 TEST_CASE("session: silence fails cleanly, then a real take works") {
     Rig r;
     SongSession s;

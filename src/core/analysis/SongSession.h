@@ -47,6 +47,11 @@ public:
     void fixAllBelow(float threshold, Device target);
     void clearAllFixes();
     void analyseAgain();               // re-runs everything on the audio still in memory
+    bool canAnalyseAgain() const;
+    // Works out the fix for a word without applying it, so the interface can show it first.
+    void requestPreview(int index, Device target);
+    struct Preview { int index = -1; Device target = Device::Phone; WordFix fix; float predictedScore = 0.0f; };
+    Preview preview() const;
 
     // State.
     SessionPhase phase() const noexcept { return phase_.load(std::memory_order_relaxed); }
@@ -84,6 +89,9 @@ private:
     LinkGroup* group_ = nullptr;
     int slot_ = -1;
 
+    Preview preview_;
+    std::atomic<bool> rescorePending_{ false };
+    std::atomic<int> previewRequest_{ 0 };
     std::vector<float> lastVocal_, lastBeat_;
     bool lastHadBeat_ = false;
 

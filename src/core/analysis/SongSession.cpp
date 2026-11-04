@@ -154,7 +154,48 @@ void SongSession::setPlaceDepth(float depth) {
         if (std::abs(depth - placeDepth_) < 1e-4f) return;
         placeDepth_ = depth;
     }
-    enqueue([this] { rescoreAll(); });
+    if (!rescorePending_.exchange(true))
+        enqueue([this] { rescorePending_.store(false); rescoreAll(); });
+}
+
+bool SongSession::canAnalyseAgain() const {
+    std::lock_guard<std::mutex> g(queueMutex_);
+    return !workerBusy_ && queue_.empty() && !lastVocal_.empty();
+}
+
+SongSession::Preview SongSession::preview() const {
+    std::lock_guard<std::mutex> g(stateMutex_);
+    return preview_;
+}
+
+void SongSession::requestPreview(int index, Device target) {
+    // Only the newest request matters when someone clicks through words quickly.
+    const int ticket = previewRequest_.fetch_add(1) + 1;
+    enqueue([this, index, target, ticket] {
+        if (ticket != previewRequest_.load()) return;
+        std::shared_ptr<const BandFrames> frames;
+        std::shared_ptr<const SongResult> res;
+        float depth;
+        {
+            std::lock_guard<std::mutex> g(stateMutex_);
+            frames = frames_; res = result_; depth = placeDepth_;
+        }
+        if (!frames || !res || index < 0 || index >= static_cast<int>(res->words.size())) return;
+        Word w = res->words[static_cast<size_t>(index)];
+        PlannerLimits lim;
+        lim.maxCutDb = 3.0f + 5.0f * depth;
+        Preview p;
+        p.index = index; p.target = target;
+        p.fix = planFix(*frames, w, target, depth, lim);
+        w.fix = p.fix;
+        scoreAllDevices(*frames, w, depth);
+        p.predictedScore = w.verdict[static_cast<size_t>(target)].score;
+        {
+            std::lock_guard<std::mutex> g(stateMutex_);
+            preview_ = p;
+        }
+        generation_.fetch_add(1);
+    });
 }
 
 void SongSession::startListening() {
@@ -339,6 +380,7 @@ void SongSession::publish(std::vector<Word> words, bool hasText, bool hasBeat, d
     {
         std::lock_guard<std::mutex> g(stateMutex_);
         result_ = res;
+        preview_ = Preview{}; // made from the old result, so it may no longer be true
     }
     publishPlan(res->words);
     generation_.fetch_add(1);
