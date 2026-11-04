@@ -1,0 +1,63 @@
+cmake_minimum_required(VERSION 3.22)
+cmake_policy(SET CMP0091 NEW)
+project(WERS VERSION 0.1.0 LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+# A static runtime means the plugin needs no Visual C++ redistributable on the machine.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
+option(WERS_BUILD_PLUGIN "Build the VST3 plugin (needs JUCE)" ON)
+option(WERS_BUILD_TESTS "Build unit tests" ON)
+option(WERS_WITH_WHISPER "Build text recognition with whisper.cpp" ON)
+set(WERS_SANITIZE "" CACHE STRING "Sanitizers for tests, for example address,undefined or thread")
+
+include(FetchContent)
+set(FETCHCONTENT_QUIET ON)
+
+if(WERS_SANITIZE AND NOT MSVC)
+    add_compile_options(-fsanitize=${WERS_SANITIZE} -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=${WERS_SANITIZE})
+endif()
+
+if(MSVC)
+    set(WERS_WARNINGS /W4 /permissive- /utf-8)
+else()
+    set(WERS_WARNINGS -Wall -Wextra -Wno-unused-parameter)
+endif()
+
+if(WERS_WITH_WHISPER)
+    FetchContent_Declare(whisper GIT_REPOSITORY https://github.com/ggml-org/whisper.cpp GIT_TAG v1.9.5 GIT_SHALLOW TRUE)
+    set(WHISPER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(WHISPER_BUILD_SERVER OFF CACHE BOOL "" FORCE)
+    set(WHISPER_CURL OFF CACHE BOOL "" FORCE)
+    set(WHISPER_SDL2 OFF CACHE BOOL "" FORCE)
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    # Fixed instruction set: AVX2 is checked at runtime before any of this code runs.
+    set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
+    set(GGML_AVX ON CACHE BOOL "" FORCE)
+    set(GGML_AVX2 ON CACHE BOOL "" FORCE)
+    set(GGML_FMA ON CACHE BOOL "" FORCE)
+    set(GGML_F16C ON CACHE BOOL "" FORCE)
+    set(GGML_BMI2 OFF CACHE BOOL "" FORCE)
+    set(GGML_AVX512 OFF CACHE BOOL "" FORCE)
+    set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
+    set(GGML_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(GGML_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(whisper)
+endif()
+
+add_subdirectory(src/core)
+
+if(WERS_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+    add_subdirectory(tools)
+endif()
+
+if(WERS_BUILD_PLUGIN)
+    add_subdirectory(src/plugin)
+endif()
