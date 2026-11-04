@@ -1,4 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
+# Also for dependencies that ask for an older CMake, or their code would use another runtime.
+set(CMAKE_POLICY_DEFAULT_CMP0091 NEW)
 cmake_policy(SET CMP0091 NEW)
 project(WERS VERSION 0.1.0 LANGUAGES C CXX)
 

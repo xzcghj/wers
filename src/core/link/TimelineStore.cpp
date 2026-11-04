@@ -48,32 +48,37 @@ inline void TimelineStore::writeOne(double sample, double p) noexcept {
 
 void TimelineStore::capture(const float* mono, int n, int64_t timeline) noexcept {
     writers_.fetch_add(1);
-    if (armed_.load() && !data_.empty() && timeline >= 0) {
-        if (timeline != expected_) { // a jump or the first block
-            for (auto& s : lp_) s.reset();
-            prev_ = 0.0;
-            nextOut_ = static_cast<int64_t>(std::ceil(static_cast<double>(timeline) * ratio_));
+    // While disarmed nothing here is touched, because arm() and prepare() own these members then.
+    if (armed_.load()) {
+        if (!data_.empty() && timeline >= 0) {
+            if (timeline != expected_) { // a jump or the first block
+                for (auto& s : lp_) s.reset();
+                prev_ = 0.0;
+                nextOut_ = static_cast<int64_t>(std::ceil(static_cast<double>(timeline) * ratio_));
+            }
+            for (int i = 0; i < n; ++i) writeOne(mono[i], static_cast<double>(timeline + i));
+            expected_ = timeline + n;
+        } else {
+            expected_ = -1;
         }
-        for (int i = 0; i < n; ++i) writeOne(mono[i], static_cast<double>(timeline + i));
-        expected_ = timeline + n;
-    } else {
-        expected_ = -1;
     }
     writers_.fetch_sub(1);
 }
 
 void TimelineStore::captureStereo(const float* l, const float* r, int n, int64_t timeline) noexcept {
     writers_.fetch_add(1);
-    if (armed_.load() && !data_.empty() && timeline >= 0) {
-        if (timeline != expected_) {
-            for (auto& s : lp_) s.reset();
-            prev_ = 0.0;
-            nextOut_ = static_cast<int64_t>(std::ceil(static_cast<double>(timeline) * ratio_));
+    if (armed_.load()) {
+        if (!data_.empty() && timeline >= 0) {
+            if (timeline != expected_) {
+                for (auto& s : lp_) s.reset();
+                prev_ = 0.0;
+                nextOut_ = static_cast<int64_t>(std::ceil(static_cast<double>(timeline) * ratio_));
+            }
+            for (int i = 0; i < n; ++i) writeOne(0.5 * (static_cast<double>(l[i]) + r[i]), static_cast<double>(timeline + i));
+            expected_ = timeline + n;
+        } else {
+            expected_ = -1;
         }
-        for (int i = 0; i < n; ++i) writeOne(0.5 * (static_cast<double>(l[i]) + r[i]), static_cast<double>(timeline + i));
-        expected_ = timeline + n;
-    } else {
-        expected_ = -1;
     }
     writers_.fetch_sub(1);
 }

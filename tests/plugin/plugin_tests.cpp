@@ -5,6 +5,8 @@
 #include "ui/PluginEditor.h"
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <thread>
 #include <cstdlib>
 #include <new>
 using namespace wers;
@@ -333,6 +335,85 @@ TEST_CASE("full round: two linked instances, analysis, fix, render, save and rel
     CHECK(planThere);
 
     beatProc->setPlayHead(nullptr);
+}
+
+TEST_CASE("audio keeps running while the message thread changes everything") {
+    const double fs = 48000.0;
+    WersProcessor vocal, beat;
+    setParam(vocal, ids::group, 3.0f);
+    setParam(beat, ids::group, 3.0f);
+    setParam(beat, ids::role, 1.0f);
+    pump(200);
+    vocal.prepareToPlay(fs, 512);
+    beat.prepareToPlay(fs, 512);
+    FakeHead vh, bh;
+    vocal.setPlayHead(&vh);
+    beat.setPlayHead(&bh);
+    auto vocalAudio = voiceLike(static_cast<int>(fs * 20), fs);
+    auto beatAudio = noiseBuffer(2, static_cast<int>(fs * 20), 0.3f, 4);
+
+    std::atomic<bool> run{ true };
+    std::atomic<long> blocks{ 0 };
+    std::atomic<bool> finite{ true };
+    std::thread audio([&] {
+        juce::AudioBuffer<float> v(2, 512), b(2, 512);
+        juce::MidiBuffer midi;
+        int pos = 0;
+        while (run.load()) {
+            if (pos + 512 > vocalAudio.getNumSamples()) { pos = 0; }
+            vh.samples = bh.samples = pos;
+            for (int c = 0; c < 2; ++c) {
+                v.copyFrom(c, 0, vocalAudio, c, pos, 512);
+                b.copyFrom(c, 0, beatAudio, c, pos, 512);
+            }
+            vocal.processBlock(v, midi);
+            beat.processBlock(b, midi);
+            for (int i = 0; i < 512; i += 37) if (!std::isfinite(v.getSample(0, i)) || !std::isfinite(b.getSample(0, i))) finite.store(false);
+            pos += 512;
+            blocks.fetch_add(1);
+            std::this_thread::sleep_for(std::chrono::microseconds(150));
+        }
+    });
+
+    for (int round = 0; round < 6; ++round) {
+        vocal.startAnalysis();
+        pump(250);
+        vocal.session().stopListeningAndAnalyse();
+        vocal.session().waitIdle();
+        vocal.session().fixAllBelow(kScoreFades, Device::Phone);
+        pump(30);
+        juce::MemoryBlock saved;
+        vocal.getStateInformation(saved);
+        vocal.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
+        pump(30);
+        {
+            std::unique_ptr<juce::AudioProcessorEditor> ed(vocal.createEditor());
+            dynamic_cast<WersEditor*>(ed.get())->updateNow();
+            pump(50);
+        }
+        vocal.session().clearAllFixes();
+        setParam(beat, ids::place, static_cast<float>(round * 15));
+        setParam(vocal, ids::density, static_cast<float>(round * 15));
+        setParam(vocal, ids::space, static_cast<float>(round * 15));
+        setParam(vocal, ids::bypass, round % 2 == 0 ? 1.0f : 0.0f);
+        pump(30);
+        vocal.chooseRole(Role::Master);
+        pump(30);
+        vocal.chooseRole(Role::Vocal);
+        vocal.cycleGroup();
+        beat.cycleGroup();
+        pump(30);
+        beat.chooseRole(Role::Vocal);
+        pump(20);
+        beat.chooseRole(Role::Beat);
+        pump(20);
+    }
+    run.store(false);
+    audio.join();
+    vocal.setPlayHead(nullptr);
+    beat.setPlayHead(nullptr);
+    CHECK(blocks.load() > 100);
+    CHECK(finite.load());
 }
 
 TEST_CASE("damaged saved state never harms the plugin") {

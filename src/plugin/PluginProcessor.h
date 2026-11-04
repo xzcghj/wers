@@ -94,7 +94,7 @@ private:
 
     std::shared_ptr<LinkHub> hub_;
     LinkGroup* group_ = nullptr;
-    std::unique_ptr<GroupPlaceControl> control_;
+    GroupPlaceControl control_;
     std::atomic<LinkGroup*> rtGroup_{ nullptr };
     std::atomic<int> rtSlot_{ -1 };
     std::atomic<const GroupPlaceControl*> rtControl_{ nullptr };

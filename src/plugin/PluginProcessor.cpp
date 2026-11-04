@@ -85,7 +85,7 @@ void WersProcessor::applyRoleAndGroup() {
     }
     group_ = &hub_->group(wantGroup);
     appliedGroup_ = wantGroup;
-    control_ = std::make_unique<GroupPlaceControl>(*group_);
+    control_.setGroup(group_);
     rtGroup_.store(group_);
 
     if (wantRole == static_cast<int>(Role::Vocal)) {
@@ -96,7 +96,7 @@ void WersProcessor::applyRoleAndGroup() {
         group_->addBeatStore(beatStore_);
         group_->beatInstanceDelta(1);
         beatStoreRegistered_ = true;
-        rtControl_.store(control_.get());
+        rtControl_.store(&control_);
         group_->publishPlaceDepth(pPlace_->load() * 0.01f);
     }
     activeRole_.store(wantRole);
