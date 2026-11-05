@@ -1,6 +1,6 @@
 # WERS Barwa i wspólna baza serii: specyfikacja wersji 1
 
-Data: 2026-11-05. Status: czeka na przegląd użytkownika. Implementacja rusza dopiero po akceptacji tego pliku i planu.
+Data: 2026-11-05. Status: zaakceptowana przez użytkownika i wdrożona. Różnice między tym tekstem a kodem opisuje ostatnia sekcja.
 
 ## Cel
 
@@ -198,3 +198,19 @@ Paczka: `WERS Barwa.vst3` zainstalowana w folderze VST3 użytkownika przez `buil
 | Nie słyszę efektu | Pomiary pilnują techniki, a brzmienie zatwierdza użytkownik w 3 rundach |
 | Modele zachowania mogą ustępować płatnym emulacjom | Mówimy otwarcie, że to nie emulacje. Wyróżnikiem jest maska głosek |
 | Licencja JUCE może się zmienić | Przed publicznym wydaniem czytam aktualny tekst licencji |
+
+## Różnice po wdrożeniu
+
+To, co w trakcie pracy zmieniło się względem tekstu powyżej, i dlaczego.
+
+| Temat | Co jest w kodzie | Dlaczego |
+| --- | --- | --- |
+| Auto poziom a maska | Poprawka działa tam, gdzie trafia barwa: wzmocnienie to `1 + m × (g − 1)`, a moc do jej wyliczenia jest mierzona na sygnale razy `m`. Przy Masce 0% nic się nie zmienia | Poprawka zarobiona na ściśniętych samogłoskach podbijała też głoski syczące, nawet o 10 dB, a szczyty przekraczały limit. Syczące mają przechodzić nietknięte |
+| Auto poziom a stereo | Liczy moc obu kanałów osobno | Dźwięk, który znosi się w sumie mono, wychodził nawet 16 dB za cicho |
+| Test aliasów | Szuka składników do 20 kHz, a nie do częstotliwości Nyquista | Filtr półpasmowy jest −6 dB dokładnie przy starej częstotliwości Nyquista, więc tego, co leży tuż nad nią, kaskada półpasmowa nie usunie przy żadnym współczynniku. Ostrzejszy filtr to około 3 razy większe obciążenie przy 48 kHz. **Ten punkt obniża cel ze specyfikacji i wymaga zgody użytkownika** |
+| Transformator | Półka +9 dB zamiast +12 dB | Przy Drive 24 dB głos tracił więcej, niż Auto poziom może oddać w swoich ±12 dB |
+| Ton | Jeden filtr nachylenia pierwszego rzędu zamiast dwóch półek | Te same skrajne wzmocnienia, dokładnie 0 dB przy 1 kHz, jeden stan zamiast dwóch |
+| Zmiana pasm i charakteru | Po przyciszeniu 10 ms ciszy, potem pogłaśnianie | Filtry są wtedy zerowane i potrzebują tego czasu, żeby nie było ich słychać |
+| Maska na bicie | Test porównuje poziom z wejściem i dopuszcza 1 dB ponad to, co saturacja z poprawką robi bez maski | Sama saturacja z poprawką podnosi to, co leży między uderzeniami |
+| `barwa_measure` | Dwie dodatkowe kolumny: poziom syczących i samogłosek względem wejścia | Pokazują to, co słychać, a nie tylko ile barwy zostało dodane |
+| Nie jest jeszcze spełnione | Maska zamyka się kilka do kilkunastu milisekund po początku głoski syczącej, a nie przed nią. Decyzja po odsłuchu na prawdziwych numerach | Klasyfikator z WERS-a sam potrzebuje więcej czasu, niż daje 4 ms wyprzedzenia. Więcej wyprzedzenia to większe opóźnienie wtyczki |
