@@ -40,7 +40,7 @@ scripts           build_windows.bat buduje, testuje i instaluje wszystkie wtyczk
 
 ### Nowe części
 
-- **Oversampler:** kaskada filtrów półpasmowych FIR dla 2x, 4x i 8x, oparta na istniejącym `Halfband2x`. Podaje dokładne opóźnienie. Nie alokuje pamięci w wątku audio. Przy wysokich częstotliwościach próbkowania ogranicza współczynnik tak, żeby nie przekraczać 384 kHz.
+- **Oversampler:** kaskada filtrów półpasmowych FIR dla 2x, 4x i 8x, z oknem Kaisera i tłumieniem około 100 dB. WERS zostaje przy swoim `Halfband2x`, bo jego 47 współczynników nie da takiego tłumienia. Podaje dokładne opóźnienie w całych próbkach. Nie alokuje pamięci w wątku audio. Przy wysokich częstotliwościach próbkowania ogranicza współczynnik tak, żeby nie przekraczać 384 kHz.
 - **Crossover:** do 3 pasm, Linkwitz-Riley 24 dB/okt., z korekcją fazy między pasmami, żeby suma miała płaską charakterystykę. Działa na częstotliwości bazowej.
 - **LevelMatch:** porównuje moc z wagą K przed i po obróbce w oknie około 400 ms i podaje wyrównanie w granicach ±12 dB. Zmienia je powoli i zamraża w ciszy, poniżej −60 dBFS.
 - **PresetBar:** presety fabryczne z pliku wtyczki, presety użytkownika w `%APPDATA%\WERS\presets\<wtyczka>`, sloty A i B z kopiowaniem. Cofanie zmian zostaje po stronie DAW.
@@ -86,7 +86,7 @@ Każdy kształt ma wzmocnienie 1 dla małych sygnałów, a emfaza i deemfaza są
 | Charakter | Model | Pomiar charakteru (mono, 48 kHz, Mix 100%, bez maski, bez Auto poziomu) |
 | --- | --- | --- |
 | Lampa | Tangens hiperboliczny z małym przesunięciem pracy, które zależy od poziomu | Sinus 1 kHz, −18 dBFS, Drive 12 dB: 2. harmoniczna co najmniej 3 dB nad 3. |
-| Taśma | Miękki kształt między emfazą a deemfazą wysokich tonów | Ten sam poziom i Drive: zniekształcenia przy 8 kHz co najmniej 6 dB wyższe niż przy 1 kHz |
+| Taśma | Miękki kształt między emfazą a deemfazą wysokich tonów | Ten sam poziom i Drive, przy 96 kHz, bo przy 48 kHz 3. harmoniczna 8 kHz wypada poza pasmem: zniekształcenia przy 8 kHz co najmniej 6 dB wyższe niż przy 1 kHz |
 | Transformator | Miękki kształt między emfazą a deemfazą niskich tonów | Ten sam poziom i Drive: zniekształcenia przy 100 Hz co najmniej 6 dB wyższe niż przy 1 kHz |
 | Tranzystor | Symetryczny kształt z twardszym kolanem | Sinus 1 kHz, −18 dBFS, Drive 12 dB: 3. harmoniczna co najmniej 12 dB nad 2. |
 
@@ -141,7 +141,7 @@ Mięta oznacza to, co wtyczka dodaje, bursztyn ostrzega o przesterze na wyjściu
 
 ## Presety fabryczne
 
-Około 12: Ciepły refren, Gęsty rap, Szept z bliska, Przód miksu, Rage, Dubel w tle, Klej na bit, 808 na telefon, Werbel z pazurem, Hi-haty bez ostrości, Delikatny klej na master, Czysty start. Nazwy mogą się zmienić. Wartości ustawiam wstępnie z pomiarów, a dostrajamy je po odsłuchach użytkownika.
+Presety nie zmieniają Jakości, Bypassu, Delty ani Solo. Około 12: Ciepły refren, Gęsty rap, Szept z bliska, Przód miksu, Rage, Dubel w tle, Klej na bit, 808 na telefon, Werbel z pazurem, Hi-haty bez ostrości, Delikatny klej na master, Czysty start. Nazwy mogą się zmienić. Wartości ustawiam wstępnie z pomiarów, a dostrajamy je po odsłuchach użytkownika.
 
 ## Testy
 
