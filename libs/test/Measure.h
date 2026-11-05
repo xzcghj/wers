@@ -52,9 +52,11 @@ inline double thdDb(const std::vector<float>& x, double f, double fs) {
     return 10.0 * std::log10(power + 1e-30) - toneLevelDb(x, window, f, fs);
 }
 
-// The strongest component that is not f, a harmonic of f or DC, against the fundamental.
+// The strongest component up to upToHz that is not f, a harmonic of f or DC, against the fundamental.
 // Reads up to 65536 samples from the start of x; x needs enough of them to tell the tones apart.
-inline double strongestNonHarmonicDb(const std::vector<float>& x, double f, double fs) {
+// A halfband filter is half way down exactly at the old Nyquist frequency, so what lies just above it
+// folds to just below it. That is why the search stops at the edge of hearing.
+inline double strongestNonHarmonicDb(const std::vector<float>& x, double f, double fs, double upToHz = 20000.0) {
     constexpr int kGuardBins = 12;
     int size = 1024;
     while (size < 65536 && static_cast<size_t>(size) * 2 <= x.size()) size *= 2;
@@ -65,7 +67,8 @@ inline double strongestNonHarmonicDb(const std::vector<float>& x, double f, doub
     fft.transform(spectrum);
     const double binsPerTone = f * size / fs;
     double fundamental = 1e-30, strongest = 1e-30;
-    for (int bin = 0; bin <= size / 2; ++bin) {
+    const int lastBin = std::min(size / 2, static_cast<int>(upToHz * size / fs));
+    for (int bin = 0; bin <= lastBin; ++bin) {
         const double power = std::norm(spectrum[static_cast<size_t>(bin)]);
         if (std::abs(bin - binsPerTone) <= kGuardBins) { fundamental = std::max(fundamental, power); continue; }
         if (bin <= kGuardBins) continue;
