@@ -18,3 +18,16 @@ if(WERS_BUILD_TESTS)
     target_compile_options(barwa_tests PRIVATE ${WERS_WARNINGS})
     add_test(NAME barwa_tests COMMAND barwa_tests)
 endif()
+
+if(WERS_BUILD_PLUGIN)
+    wers_add_plugin(WersBarwa PRODUCT "WERS Barwa" CODE Wbrw BUNDLE "app.wers.barwa" CATEGORIES Fx Distortion)
+    target_sources(WersBarwa PRIVATE
+        plugin/Params.cpp
+        plugin/BarwaProcessor.cpp)
+    target_include_directories(WersBarwa PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(WersBarwa PRIVATE barwa_dsp)
+    if(WERS_BUILD_TESTS)
+        wers_add_plugin_program(WersBarwa barwa_plugin_tests tests/plugin/barwa_plugin_tests.cpp)
+        add_test(NAME barwa_plugin_tests COMMAND barwa_plugin_tests)
+    endif()
+endif()
