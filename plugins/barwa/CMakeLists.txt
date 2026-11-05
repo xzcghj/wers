@@ -1,5 +1,6 @@
 # WERS Barwa: a saturator that gives colour to vowels and leaves sibilants clean.
 add_library(barwa_dsp STATIC
+    dsp/BarwaEngine.cpp
     dsp/CharacterShaper.cpp
 )
 target_include_directories(barwa_dsp PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/dsp)
@@ -10,6 +11,7 @@ if(WERS_BUILD_TESTS)
     add_executable(barwa_tests
         tests/test_main.cpp
         tests/test_character.cpp
+        tests/test_engine.cpp
     )
     target_include_directories(barwa_tests PRIVATE ${doctest_SOURCE_DIR}/doctest)
     target_link_libraries(barwa_tests PRIVATE barwa_dsp wers_test_support)

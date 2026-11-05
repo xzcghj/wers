@@ -6,7 +6,7 @@ namespace {
 
 constexpr double kFlatQ = 0.70710678118654752;
 constexpr double kTapeShelfHz = 3000.0, kTapeShelfDb = 6.0;
-constexpr double kTransformerShelfHz = 300.0, kTransformerShelfDb = 12.0;
+constexpr double kTransformerShelfHz = 300.0, kTransformerShelfDb = 9.0;
 constexpr double kLevelSeconds = 0.03;
 constexpr float kLampBias = 0.25f, kLampBiasFromLevel = 0.15f;
 constexpr float kTapeKnee = 2.5f;
