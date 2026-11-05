@@ -267,6 +267,51 @@ TEST_CASE("mask spares sibilants") {
     }
 }
 
+TEST_CASE("a bright vowel keeps all its colour") {
+    // A forward voice has a lot between 2 and 4 kHz, so the classifier calls it only partly a vowel. That is no
+    // reason to take colour away from it. What is mostly not a vowel still loses it.
+    const int n = static_cast<int>(kFs * 2.0), from = static_cast<int>(kFs * 0.5);
+    const auto dropDb = [&](double highDb) {
+        auto x = sine(500.0, -18.0, n, kFs);
+        const auto high = sine(3000.0, -18.0 + highDb, n, kFs);
+        for (size_t i = 0; i < x.size(); ++i) x[i] += high[i];
+        auto p = plain(12.0f);
+        p.delta = true;
+        p.mask = 0.0f;
+        const auto open = run(x, p);
+        p.mask = 1.0f;
+        const auto masked = run(x, p);
+        return rmsDb(open, from) - rmsDb(masked, from);
+    };
+    CHECK(dropDb(-20.0) < 0.1);
+    CHECK(dropDb(-11.0) < 0.1);
+    const double mostlyNot = dropDb(-2.0);
+    MESSAGE("mostly not a vowel: down " << mostlyNot << " dB");
+    CHECK(mostlyNot > 6.0);
+}
+
+TEST_CASE("a half open mask keeps the level") {
+    // A sibilant closes the mask, so here the setting alone decides how much colour goes through. It is loud enough
+    // to saturate: the colour then lowers it, and only a matched gain brings it back.
+    const auto x = bandNoise(4000.0, 9000.0, -6.0, static_cast<int>(kFs * 3.0), kFs);
+    const int from = static_cast<int>(kFs);
+    const double input = weightedDb(x, from, static_cast<int>(x.size()));
+    for (Character character : { Character::Lamp, Character::Transistor }) {
+        for (float mask : { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f }) {
+            auto p = plain(12.0f);
+            p.band[0].character = character;
+            p.autoLevel = true;
+            p.mask = mask;
+            const auto y = run(x, p);
+            const double change = weightedDb(y, from, static_cast<int>(y.size())) - input;
+            CAPTURE(static_cast<int>(character));
+            CAPTURE(mask);
+            MESSAGE("character " << static_cast<int>(character) << ", mask " << mask << ": level " << change << " dB");
+            CHECK(std::abs(change) < 1.0);
+        }
+    }
+}
+
 TEST_CASE("auto level leaves sibilants where they were") {
     // The gain that makes up for squashed vowels must not lift what the mask keeps clean.
     const int skip = static_cast<int>(kFs * 0.03), settled = 4;
@@ -745,8 +790,12 @@ TEST_CASE("the measurement file holds only numbers") {
         file << "\xFF\xFE to nie jest tekst.wav\n";
     }
     REQUIRE(measureList(list.u8string(), out.u8string()) == 1);
-    std::ifstream result(out, std::ios::binary);
-    std::string text((std::istreambuf_iterator<char>(result)), std::istreambuf_iterator<char>());
+    std::string text;
+    {
+        // Closed before the folder goes: Windows does not delete a file that is still open.
+        std::ifstream result(out, std::ios::binary);
+        text.assign(std::istreambuf_iterator<char>(result), std::istreambuf_iterator<char>());
+    }
     CAPTURE(text);
     CHECK(text.rfind("index\tseconds\tsibFrames\tvowelFrames\tsibDropDb\tvowelDropDb\tsibLevelDb\tvowelLevelDb\tlevelDiffDb\tpeakDiffDb\n", 0) == 0);
     CHECK(text.find("sekretny") == std::string::npos);

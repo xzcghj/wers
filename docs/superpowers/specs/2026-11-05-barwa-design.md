@@ -87,7 +87,7 @@ Każdy kształt ma wzmocnienie 1 dla małych sygnałów, a emfaza i deemfaza są
 | --- | --- | --- |
 | Lampa | Tangens hiperboliczny z małym przesunięciem pracy, które zależy od poziomu | Sinus 1 kHz, −18 dBFS, Drive 12 dB: 2. harmoniczna co najmniej 3 dB nad 3. |
 | Taśma | Miękki kształt między emfazą a deemfazą wysokich tonów | Ten sam poziom i Drive, przy 96 kHz, bo przy 48 kHz 3. harmoniczna 8 kHz wypada poza pasmem: zniekształcenia przy 8 kHz co najmniej 6 dB wyższe niż przy 1 kHz |
-| Transformator | Miękki kształt między emfazą a deemfazą niskich tonów | Ten sam poziom i Drive: zniekształcenia przy 100 Hz co najmniej 6 dB wyższe niż przy 1 kHz |
+| Transformator | Półka +8 dB zamiast +12 dB | Przy Drive 24 dB i Masce 100% głos tracił więcej, niż Auto poziom może oddać w swoich ±12 dB. Przy +9 dB brakowało 1,04 dB, przy +8 dB brakuje 0,91 dB, a granica to 1 dB |
 | Tranzystor | Symetryczny kształt z twardszym kolanem | Sinus 1 kHz, −18 dBFS, Drive 12 dB: 3. harmoniczna co najmniej 12 dB nad 2. |
 
 ### Maska głosek
@@ -108,6 +108,7 @@ Wartość startowa wynika z nazwy śladu: 100%, a 0% przy nazwach `beat`, `bit`,
 | Mix pasma (3 razy) | 0–100% | 100% | Tak |
 | Solo pasma (3 razy) | wł./wył. | wył. | Nie |
 | Maska głosek | 0–100% | z nazwy śladu | Tak |
+| Maska a jasne samogłoski | `w = min(1, samogłoska / 0,75) + 0,35 × zwarta`, a nie sama przynależność do samogłosek | Klasyfikator z WERS-a uznaje wysunięty, jasny głos tylko częściowo za samogłoskę, więc na dwóch prawdziwych numerach samogłoski traciły 1,2 dB barwy przy celu 1 dB. Teraz tracą 0,2 dB, a syczące tracą nadal ponad 20 dB. Sam klasyfikator się nie zmienił, więc WERS działa jak wcześniej |
 | Ton | −100–100% | 0% | Tak |
 | Mix | 0–100% | 100% | Tak |
 | Auto poziom | wł./wył. | wł. | Nie |
@@ -205,10 +206,11 @@ To, co w trakcie pracy zmieniło się względem tekstu powyżej, i dlaczego.
 
 | Temat | Co jest w kodzie | Dlaczego |
 | --- | --- | --- |
-| Auto poziom a maska | Poprawka działa tam, gdzie trafia barwa: wzmocnienie to `1 + m × (g − 1)`, a moc do jej wyliczenia jest mierzona na sygnale razy `m`. Przy Masce 0% nic się nie zmienia | Poprawka zarobiona na ściśniętych samogłoskach podbijała też głoski syczące, nawet o 10 dB, a szczyty przekraczały limit. Syczące mają przechodzić nietknięte |
+| Auto poziom a maska | Maska przechodzi płynnie od czystego głosu na jego poziomie do głosu z barwą na wyrównanym poziomie: `(1 − m) × suchy + m × g × z barwą`. Moc do wyliczenia `g` jest mierzona na pełnej barwie i ważona przez `m`. Przy Masce 0% i przy wyłączonym Auto poziomie nic się nie zmienia | Poprawka zarobiona na ściśniętych samogłoskach podbijała syczące nawet o 10 dB. Wspólne wzmocnienie na sumę dawało z kolei górkę lub dołek do 2 dB tam, gdzie maska była częściowo otwarta, a to było słychać w szczytach na prawdziwym numerze: +1,00 dB, teraz 0,00 dB |
 | Auto poziom a stereo | Liczy moc obu kanałów osobno | Dźwięk, który znosi się w sumie mono, wychodził nawet 16 dB za cicho |
 | Test aliasów | Szuka składników do 20 kHz, a nie do częstotliwości Nyquista | Filtr półpasmowy jest −6 dB dokładnie przy starej częstotliwości Nyquista, więc tego, co leży tuż nad nią, kaskada półpasmowa nie usunie przy żadnym współczynniku. Ostrzejszy filtr to około 3 razy większe obciążenie przy 48 kHz. **Ten punkt obniża cel ze specyfikacji i wymaga zgody użytkownika** |
-| Transformator | Półka +9 dB zamiast +12 dB | Przy Drive 24 dB głos tracił więcej, niż Auto poziom może oddać w swoich ±12 dB |
+| Transformator | Półka +8 dB zamiast +12 dB | Przy Drive 24 dB i Masce 100% głos tracił więcej, niż Auto poziom może oddać w swoich ±12 dB. Przy +9 dB brakowało 1,04 dB, przy +8 dB brakuje 0,91 dB, a granica to 1 dB |
+| Maska a jasne samogłoski | `w = min(1, samogłoska / 0,75) + 0,35 × zwarta`, a nie sama przynależność do samogłosek | Klasyfikator z WERS-a uznaje wysunięty, jasny głos tylko częściowo za samogłoskę, więc na dwóch prawdziwych numerach samogłoski traciły 1,2 dB barwy przy celu 1 dB. Teraz tracą 0,2 dB, a syczące tracą nadal ponad 20 dB. Sam klasyfikator się nie zmienił, więc WERS działa jak wcześniej |
 | Ton | Jeden filtr nachylenia pierwszego rzędu zamiast dwóch półek | Te same skrajne wzmocnienia, dokładnie 0 dB przy 1 kHz, jeden stan zamiast dwóch |
 | Zmiana pasm i charakteru | Po przyciszeniu 10 ms ciszy, potem pogłaśnianie | Filtry są wtedy zerowane i potrzebują tego czasu, żeby nie było ich słychać |
 | Maska na bicie | Test porównuje poziom z wejściem i dopuszcza 1 dB ponad to, co saturacja z poprawką robi bez maski | Sama saturacja z poprawką podnosi to, co leży między uderzeniami |

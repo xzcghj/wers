@@ -13,6 +13,7 @@ constexpr double kSettleSeconds = 0.01; // shelves and band filters forget their
 constexpr double kDcHz = 12.0, kTiltHz = 1000.0, kTiltDb = 6.0;
 constexpr float kFullDriveDb = 3.0f; // the difference grows in the first 3 dB of the slider
 constexpr float kStopShare = 0.35f;
+constexpr float kVowelFull = 0.75f; // from here on a sound counts as a whole vowel: a forward voice rarely gets higher
 constexpr float kInputLimit = 64.0f; // anything beyond +36 dBFS is not audio
 
 float approach(float value, float target, float coef, float snap) noexcept {
@@ -253,7 +254,7 @@ void BarwaEngine::controlTick() noexcept {
 
 void BarwaEngine::aimMask() noexcept {
     const auto& m = classifier_.current();
-    const float share = std::clamp(m.vowel + kStopShare * m.stop, 0.0f, 1.0f);
+    const float share = std::clamp(m.vowel / kVowelFull + kStopShare * m.stop, 0.0f, 1.0f);
     const float target = (1.0f - mask_) + mask_ * share;
     maskRamp_.aim(target, perHopSample_);
     maskNow_.store(target, std::memory_order_relaxed);
@@ -285,7 +286,7 @@ void BarwaEngine::process(float* const* channels, int numChannels, int numSample
         const float mono = count == 2 ? 0.5f * (in[0] + in[1]) : in[0];
         if (classifier_.push(mono)) aimMask();
 
-        std::array<float, 2> dry{}, extra{};
+        std::array<float, 2> dry{}, colour{};
         for (size_t c = 0; c < static_cast<size_t>(count); ++c) {
             auto& channel = channel_[c];
             float low = 0.0f, mid = 0.0f, high = 0.0f;
@@ -303,19 +304,22 @@ void BarwaEngine::process(float* const* channels, int numChannels, int numSample
                 added += control.weight.now * (wet - delayed);
             }
             dry[c] = untouched;
-            extra[c] = mixRamp_.now * maskRamp_.now * static_cast<float>(channel.tilt.tick(channel.dc.tick(static_cast<double>(added))));
+            colour[c] = mixRamp_.now * static_cast<float>(channel.tilt.tick(channel.dc.tick(static_cast<double>(added))));
         }
 
-        // Make-up is earned and spent where the colour goes. What the mask keeps clean stays at its own level,
-        // and it does not count towards the gain. A soloed band says nothing about the whole, so the gain holds.
-        const float colour = maskRamp_.now;
+        // The mask crossfades between the clean voice at its own level and the coloured voice at its matched level,
+        // so a half open mask lands between the two. Make-up is earned where the colour goes, and it is earned on the
+        // whole colour, whatever part of it goes through now. A soloed band says nothing about the whole, so it holds.
+        const float open = maskRamp_.now;
         if (!anySolo_) {
-            matchGain_ = count == 2 ? levelMatch_.push(colour * dry[0], colour * dry[1], colour * (dry[0] + extra[0]), colour * (dry[1] + extra[1]))
-                                    : levelMatch_.push(colour * dry[0], colour * (dry[0] + extra[0]));
+            matchGain_ = count == 2 ? levelMatch_.push(open * dry[0], open * dry[1], open * (dry[0] + colour[0]), open * (dry[1] + colour[1]))
+                                    : levelMatch_.push(open * dry[0], open * (dry[0] + colour[0]));
         }
-        const float gain = (1.0f + autoRamp_.now * colour * (matchGain_ - 1.0f)) * outputRamp_.now * bandCountRamp_.now;
+        const float matched = 1.0f + autoRamp_.now * (matchGain_ - 1.0f);
+        const float clean = 1.0f + open * (matched - 1.0f);
+        const float last = outputRamp_.now * bandCountRamp_.now;
         for (size_t c = 0; c < static_cast<size_t>(count); ++c)
-            channels[c][i] = (dryRamp_.now * dry[c] + extra[c]) * gain;
+            channels[c][i] = (dryRamp_.now * dry[c] * clean + open * colour[c] * matched) * last;
 
         for (auto& b : bandControl_) {
             b.gain.now += b.gain.step;
