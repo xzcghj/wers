@@ -34,12 +34,25 @@ PresetBar::PresetBar(PresetStore& store) : store_(store) {
 
 void PresetBar::step(int direction) {
     const auto names = store_.names();
-    if (names.isEmpty()) return;
+    const int size = names.size();
+    if (size == 0) return;
     const int now = names.indexOf(store_.currentName());
-    int next = 0;
-    if (now >= 0) next = (now + direction + names.size()) % names.size();
-    else next = direction > 0 ? 0 : names.size() - 1;
-    store_.load(names[next]);
+    int next = now >= 0 ? now + direction : (direction > 0 ? 0 : size - 1);
+    // A file can vanish or get damaged after the list was read. The arrows still get past it.
+    for (int tried = 0; tried < size; ++tried, next += direction) {
+        if (store_.load(names[(next % size + size) % size])) {
+            error_.clear();
+            refresh();
+            return;
+        }
+    }
+    showError(pl(text::presetNoRead));
+    refresh();
+}
+
+void PresetBar::loadNamed(const juce::String& name) {
+    if (store_.load(name)) error_.clear();
+    else showError(pl(text::presetNoRead));
     refresh();
 }
 
@@ -60,7 +73,8 @@ void PresetBar::copyToOtherSlot() {
 
 void PresetBar::saveAs(const juce::String& name) {
     juce::String error;
-    if (!store_.save(name, error)) showError(error);
+    if (store_.save(name, error)) error_.clear();
+    else showError(error);
     stopNaming();
     refresh();
 }
@@ -102,8 +116,11 @@ void PresetBar::openMenu() {
     juce::Component::SafePointer<PresetBar> self(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&name_), [self, names, current](int picked) {
         if (self == nullptr || picked == 0) return;
-        if (picked == kDeleteId) self->store_.remove(current);
-        else self->store_.load(names[picked - 1]);
+        if (picked != kDeleteId) {
+            self->loadNamed(names[picked - 1]);
+            return;
+        }
+        if (!self->store_.remove(current)) self->showError(pl(text::presetNoDelete));
         self->refresh();
     });
 }

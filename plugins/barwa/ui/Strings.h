@@ -30,11 +30,11 @@ inline constexpr const char* maskStripTitle = "Barwa na głoskach";
 inline constexpr const char* maskStripText = "Ostatnie 6 s. Im wyżej, tym więcej barwy dostaje głos.";
 inline constexpr const char* maskStripOff = "Maska wyłączona. Barwa trafia na cały dźwięk.";
 
-inline constexpr const char* maskTip = "Ile barwy trafia na głoski syczące i oddechy. Przy 100% dostają ją tylko samogłoski i trochę zwarte. Na bicie i basie ustaw 0%.";
+inline constexpr const char* maskTip = "Chroni głoski syczące i oddechy. Przy 100% barwę dostają tylko samogłoski i trochę zwarte. Na bicie i basie ustaw 0%.";
 inline constexpr const char* toneTip = "Barwa samej dodanej saturacji. W lewo ciemniej, w prawo jaśniej. Suchego dźwięku nie zmienia.";
 inline constexpr const char* deltaTip = "Słuchasz samego tego, co wtyczka dodaje.";
 inline constexpr const char* bypassTip = "Przepuszcza dźwięk bez zmian, z tym samym opóźnieniem.";
-inline constexpr const char* autoLevelTip = "Trzyma głośność taką jak na wejściu, żeby porównywać brzmienie, a nie poziom.";
+inline constexpr const char* autoLevelTip = "Trzyma głośność taką jak na wejściu, żeby porównywać brzmienie, a nie poziom. Nie rusza tego, co maska zostawia czyste.";
 inline constexpr const char* qualityTip = "Więcej to czystsze wysokie tony i większe obciążenie procesora. Zmiana daje krótki trzask podczas odtwarzania.";
 inline constexpr const char* bandsTip = "Na ile pasm dzielić dźwięk. Każde ma własny charakter i Drive.";
 inline constexpr const char* soloTip = "Słuchasz tylko tego pasma.";

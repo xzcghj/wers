@@ -3,6 +3,7 @@
 #include "doctest.h"
 #include "PresetBar.h"
 #include "PresetStore.h"
+#include "SharedText.h"
 #include "TestSignals.h"
 #include "plugin/BarwaProcessor.h"
 #include "plugin/FactoryPresets.h"
@@ -114,6 +115,7 @@ TEST_CASE("neutral settings are a pure delay") {
     p.prepareToPlay(48000.0, 256);
     const int latency = p.getLatencySamples();
     CHECK(latency == 192 + 57);
+    CHECK(p.getTailLengthSeconds() == doctest::Approx(latency / 48000.0));
     const auto in = noiseBuffer(2, 48000);
     auto out = in;
     runBlocks(p, out, 256);
@@ -480,6 +482,67 @@ TEST_CASE("the output peak is there for the warning") {
     CHECK(p.takeOutputPeak() == 0.0f);
 }
 
+TEST_CASE("values read well in a host") {
+    BarwaProcessor p;
+    const auto text = [&](const char* id, float plain) {
+        auto* parameter = p.state().getParameter(id);
+        return parameter->getText(parameter->convertTo0to1(plain), 64);
+    };
+    CHECK(text(ids::drive1, 12.5f) == "12,5 dB");
+    CHECK(text(ids::mask, 50.0f) == "50%");
+    CHECK(text(ids::xover1, 200.0f) == "200 Hz");
+    CHECK(text(ids::xover2, 3000.0f) == "3,00 kHz");
+    // Some hosts print the unit after the text, so the text alone carries it.
+    for (auto* parameter : p.getParameters()) {
+        CAPTURE(parameter->getName(64));
+        CHECK(parameter->getLabel().isEmpty());
+    }
+    auto* drive = p.state().getParameter(ids::drive1);
+    CHECK(drive->convertFrom0to1(drive->getValueForText("12,5 dB")) == doctest::Approx(12.5f));
+    auto* split = p.state().getParameter(ids::xover2);
+    CHECK(split->convertFrom0to1(split->getValueForText("3,5 kHz")) == doctest::Approx(3500.0f));
+}
+
+TEST_CASE("reset can come from another thread while quality changes") {
+    // The VST3 host calls reset through setProcessing, on a thread of its own.
+    BarwaProcessor p;
+    p.prepareToPlay(48000.0, 256);
+    std::atomic<bool> running{ true };
+    std::thread other([&] {
+        while (running.load()) {
+            p.reset();
+            std::this_thread::yield();
+        }
+    });
+    for (int round = 0; round < 30; ++round) {
+        setParam(p, ids::quality, static_cast<float>(round % 3));
+        pump(10);
+    }
+    running = false;
+    other.join();
+    auto audio = noiseBuffer(2, 2048);
+    runBlocks(p, audio, 256);
+    for (int i = 0; i < 2048; ++i) REQUIRE(std::isfinite(audio.getSample(0, i)));
+}
+
+TEST_CASE("the screen rests when no sound comes") {
+    BarwaProcessor p;
+    p.prepareToPlay(48000.0, 512);
+    std::unique_ptr<juce::AudioProcessorEditor> window(p.createEditor());
+    auto* editor = dynamic_cast<BarwaEditor*>(window.get());
+    REQUIRE(editor != nullptr);
+    auto audio = noiseBuffer(2, 8192, 0.5f);
+    runBlocks(p, audio, 512);
+    editor->updateNow();
+    const float loud = editor->spectrum().loudestShownDb();
+    CHECK(loud > -60.0f);
+    const int moved = editor->maskStrip().moves();
+    for (int tick = 0; tick < 200; ++tick) editor->updateNow();
+    CHECK(editor->spectrum().loudestShownDb() < loud - 20.0f);
+    // A few more steps while the last sound fades, then it stops.
+    CHECK(editor->maskStrip().moves() <= moved + 15);
+}
+
 TEST_CASE("the mask value reaches the sound") {
     BarwaProcessor p;
     p.prepareToPlay(48000.0, 256);
@@ -782,6 +845,24 @@ TEST_CASE("A and B are kept in the project") {
     b.presets().recallSlot(0);
     CHECK(getParam(b, ids::drive1) == doctest::Approx(10.0f));
 
+    // The name that is shown goes with the slot.
+    BarwaProcessor named;
+    TempFolder namedFolder;
+    wers::ui::PresetStore namedStore(named.state(), namedFolder.path, factoryPresets(), kExcluded);
+    REQUIRE(namedStore.load("Rage"));
+    namedStore.storeSlot(0);
+    REQUIRE(namedStore.load(juce::String::fromUTF8("Dubel w tle")));
+    namedStore.storeSlot(1);
+    namedStore.recallSlot(0);
+    CHECK(namedStore.currentName() == "Rage");
+    namedStore.recallSlot(1);
+    CHECK(namedStore.currentName() == juce::String::fromUTF8("Dubel w tle"));
+    const auto kept = namedStore.toTree();
+    namedStore.load("Rage");
+    namedStore.fromTree(kept);
+    namedStore.recallSlot(1);
+    CHECK(namedStore.currentName() == juce::String::fromUTF8("Dubel w tle"));
+
     // A slot that was never stored changes nothing, and copying fills it.
     BarwaProcessor c;
     setParam(c, ids::drive1, 15.0f);
@@ -858,6 +939,34 @@ TEST_CASE("awkward preset files") {
         CHECK(getParam(p, ids::tone) == doctest::Approx(0.0f));
         CHECK(getParam(p, ids::quality) == doctest::Approx(1.0f));
     }
+    SUBCASE("a file copied by hand keeps working under its own name") {
+        setParam(p, ids::drive1, 11.0f);
+        REQUIRE(store.save("wzorzec", error));
+        const juce::String copied("Klej, mocny #2 @ 50% ^^");
+        const auto file = folder.path.getChildFile(copied + ".xml");
+        REQUIRE(folder.path.getChildFile("wzorzec.xml").copyFileTo(file));
+        CHECK(store.names().contains(copied));
+        setParam(p, ids::drive1, 1.0f);
+        REQUIRE(store.load(copied));
+        CHECK(getParam(p, ids::drive1) == doctest::Approx(11.0f));
+        CHECK(store.currentName() == copied);
+        CHECK(store.remove(copied));
+        CHECK_FALSE(file.exists());
+    }
+    SUBCASE("a name cannot leave the folder") {
+        // A name can come from a project file, so it must not reach anything outside the folder.
+        const auto inner = folder.path.getChildFile("presety");
+        REQUIRE(inner.createDirectory().wasOk());
+        const auto outside = folder.path.getChildFile("poza.xml");
+        REQUIRE(outside.replaceWithText("<WERS_PRESET plugin=\"BARWA\" version=\"1\"/>"));
+        wers::ui::PresetStore shut(p.state(), inner, factoryPresets(), kExcluded);
+        for (const char* name : { "../poza", "..\\poza", "/poza" }) {
+            CAPTURE(juce::String(name));
+            CHECK_FALSE(shut.load(name));
+            CHECK_FALSE(shut.remove(name));
+        }
+        CHECK(outside.existsAsFile());
+    }
     SUBCASE("names that cannot be used") {
         CHECK_FALSE(store.save("", error));
         CHECK(error.isNotEmpty());
@@ -907,10 +1016,29 @@ TEST_CASE("the preset bar walks through presets and A and B") {
     bar.pickSlot(0);
     CHECK(getParam(p, ids::drive1) == doctest::Approx(25.0f));
 
-    juce::String shown;
     bar.saveAs(juce::String::fromUTF8("Mój"));
     CHECK(store.currentName() == juce::String::fromUTF8("Mój"));
     CHECK(store.names().contains(juce::String::fromUTF8("Mój")));
+    CHECK(bar.shownName() == juce::String::fromUTF8("Mój"));
+
+    // What goes wrong is said on the bar, where the name usually is, and it fits there.
+    bar.saveAs("");
+    CHECK(bar.shownName() == juce::String::fromUTF8(wers::ui::text::presetNeedsName));
+    CHECK(store.currentName() == juce::String::fromUTF8("Mój"));
+    bar.loadNamed("nie ma takiego");
+    CHECK(bar.shownName() == juce::String::fromUTF8(wers::ui::text::presetNoRead));
+    for (const char* message : { wers::ui::text::presetNeedsName, wers::ui::text::presetIsFactory, wers::ui::text::presetNoFolder, wers::ui::text::presetNoWrite, wers::ui::text::presetNoRead, wers::ui::text::presetNoDelete }) {
+        CAPTURE(juce::String::fromUTF8(message));
+        juce::GlyphArrangement glyphs;
+        glyphs.addLineOfText(wers::ui::uiFont(500, 14.0f), juce::String::fromUTF8(message), 0.0f, 0.0f);
+        CHECK(glyphs.getBoundingBox(0, -1, true).getWidth() < 205.0f);
+    }
+
+    // After a preset disappears, the arrows still get past its place.
+    const auto gone = folder.path.getChildFile(juce::String::fromUTF8("Mój.xml"));
+    REQUIRE(gone.deleteFile());
+    bar.step(1);
+    CHECK(store.currentName() == names[0]);
 }
 
 int main(int argc, char** argv) {

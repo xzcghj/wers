@@ -10,11 +10,12 @@ public:
     MaskStrip();
     // Called by the editor's timer. maskOn is false when the mask is turned all the way down.
     void push(float share, bool maskOn);
+    int moves() const noexcept { return moves_; }
     void paint(juce::Graphics&) override;
 private:
     static constexpr int kPoints = 180; // six seconds at the 30 Hz of the editor's timer
     std::array<float, kPoints> history_{};
-    int next_ = 0;
+    int next_ = 0, moves_ = 0;
     bool maskOn_ = true;
 };
 

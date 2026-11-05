@@ -149,7 +149,13 @@ void SpectrumView::analyse() {
     }
 }
 
-void SpectrumView::refresh(int bands) {
+float SpectrumView::loudestShownDb() const {
+    float loudest = kBottomDb;
+    for (size_t p = 0; p < kPoints; ++p) loudest = juce::jmax(loudest, shownIn_[p], shownOut_[p]);
+    return loudest;
+}
+
+bool SpectrumView::refresh(int bands) {
     if (bands != bands_) {
         bands_ = bands;
         repaint();
@@ -167,8 +173,16 @@ void SpectrumView::refresh(int bands) {
     if (any) {
         analyse();
         repaint();
+    } else if (loudestShownDb() > kBottomDb) {
+        // The host stopped sending sound, so what is on the screen falls away.
+        for (size_t p = 0; p < kPoints; ++p) {
+            shownIn_[p] = juce::jmax(kBottomDb, shownIn_[p] - kFallDbPerTick);
+            shownOut_[p] = juce::jmax(kBottomDb, shownOut_[p] - kFallDbPerTick);
+        }
+        repaint();
     }
     if (processor_.takeOutputPeak() > 1.0f) overUntil_ = juce::Time::getMillisecondCounter() + kOverHoldMs;
+    return any;
 }
 
 void SpectrumView::paintGrid(juce::Graphics& g) const {

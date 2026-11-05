@@ -36,6 +36,10 @@ public:
     static const char* treeType() noexcept { return "PRESETS"; }
 private:
     using Values = std::map<juce::String, float>;
+    struct Slot {
+        Values values;
+        juce::String name;
+    };
     Values currentValues() const;
     void apply(const Values& values);
     std::optional<Values> readFile(const juce::File& file) const;
@@ -47,7 +51,7 @@ private:
     std::vector<FactoryPreset> factory_;
     juce::StringArray excluded_;
     juce::CriticalSection lock_; // the host may ask for the project state from another thread
-    std::array<std::optional<Values>, 2> slots_{};
+    std::array<std::optional<Slot>, 2> slots_{};
     int activeSlot_ = 0;
     juce::String current_;
 };

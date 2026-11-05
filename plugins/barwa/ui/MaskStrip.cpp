@@ -17,6 +17,7 @@ MaskStrip::MaskStrip() {
 void MaskStrip::push(float share, bool maskOn) {
     history_[static_cast<size_t>(next_)] = juce::jlimit(0.0f, 1.0f, share);
     next_ = (next_ + 1) % kPoints;
+    ++moves_;
     maskOn_ = maskOn;
     repaint();
 }

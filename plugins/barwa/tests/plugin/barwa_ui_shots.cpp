@@ -71,11 +71,24 @@ int main(int argc, char** argv) {
         play(p, *editor, voice);
         shot(*window, dir.getChildFile("4_three_bands.png"));
         setParam(p, ids::mask, 0.0f);
-        setParam(p, ids::output, 12.0f);
         setParam(p, ids::autoLevel, 0.0f);
         setParam(p, ids::delta, 1.0f);
         play(p, *editor, voice);
-        shot(*window, dir.getChildFile("5_delta_over.png"));
+        shot(*window, dir.getChildFile("5_delta.png"));
+        setParam(p, ids::delta, 0.0f);
+        setParam(p, ids::output, 12.0f);
+        play(p, *editor, voice);
+        shot(*window, dir.getChildFile("6_overload.png"));
+        setParam(p, ids::output, 0.0f);
+        editor->presetBar().saveAs(juce::String::fromUTF8("Czysty start"));
+        editor->updateNow();
+        shot(*window, dir.getChildFile("7_preset_error.png"));
+        p.presets().load(juce::String::fromUTF8("Delikatny klej na master"));
+        editor->updateNow();
+        juce::Thread::sleep(4100);
+        editor->updateNow();
+        play(p, *editor, voice);
+        shot(*window, dir.getChildFile("8_preset_loaded.png"));
         window.reset();
     }
     return 0;

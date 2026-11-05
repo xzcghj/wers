@@ -69,6 +69,8 @@ void BarwaProcessor::prepareToPlay(double sampleRate, int) {
 }
 
 void BarwaProcessor::reset() {
+    // A VST3 host calls this on a thread of its own, which may meet a change of quality.
+    const juce::ScopedLock lock(getCallbackLock());
     engine_.reset();
     for (auto& d : dryDelay_) d.reset();
 }

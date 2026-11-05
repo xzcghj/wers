@@ -20,7 +20,9 @@ PresetStore::PresetStore(juce::AudioProcessorValueTreeState& state, juce::File f
 juce::String PresetStore::pluginId() const { return state_.state.getType().toString(); }
 
 juce::File PresetStore::fileFor(const juce::String& name) const {
-    return folder_.getChildFile(juce::File::createLegalFileName(name.trim()) + ".xml");
+    // Names also come from project files and from files copied by hand. One with a path in it is no name.
+    if (name.isEmpty() || name.containsAnyOf("/\\:")) return {};
+    return folder_.getChildFile(name + ".xml");
 }
 
 bool PresetStore::isFactory(const juce::String& name) const {
@@ -123,7 +125,7 @@ bool PresetStore::save(const juce::String& name, juce::String& error) {
 bool PresetStore::remove(const juce::String& name) {
     if (isFactory(name)) return false;
     const auto file = fileFor(name);
-    if (!file.existsAsFile() || !file.deleteFile()) return false;
+    if (file == juce::File() || !file.existsAsFile() || !file.deleteFile()) return false;
     const juce::ScopedLock lock(lock_);
     if (current_ == name) current_.clear();
     return true;
@@ -137,16 +139,19 @@ juce::String PresetStore::currentName() const {
 void PresetStore::storeSlot(int index) {
     const auto values = currentValues();
     const juce::ScopedLock lock(lock_);
-    slots_[static_cast<size_t>(juce::jlimit(0, 1, index))] = values;
+    slots_[static_cast<size_t>(juce::jlimit(0, 1, index))] = Slot{ values, current_ };
 }
 
 void PresetStore::recallSlot(int index) {
-    std::optional<Values> values;
+    std::optional<Slot> slot;
     {
         const juce::ScopedLock lock(lock_);
-        values = slots_[static_cast<size_t>(juce::jlimit(0, 1, index))];
+        slot = slots_[static_cast<size_t>(juce::jlimit(0, 1, index))];
     }
-    if (values.has_value()) apply(*values);
+    if (!slot.has_value()) return;
+    apply(slot->values);
+    const juce::ScopedLock lock(lock_);
+    current_ = slot->name;
 }
 
 void PresetStore::copySlot(int from, int to) {
@@ -173,7 +178,8 @@ juce::ValueTree PresetStore::toTree() const {
         if (!slots_[i].has_value()) continue;
         juce::ValueTree slot("SLOT");
         slot.setProperty("index", static_cast<int>(i), nullptr);
-        for (const auto& [id, value] : *slots_[i]) {
+        slot.setProperty("name", slots_[i]->name, nullptr);
+        for (const auto& [id, value] : slots_[i]->values) {
             juce::ValueTree child(kParamTag);
             child.setProperty("id", id, nullptr);
             child.setProperty("value", value, nullptr);
@@ -196,7 +202,7 @@ void PresetStore::fromTree(const juce::ValueTree& tree) {
             const auto value = static_cast<float>(child.getProperty("value", 0.0f));
             if (std::isfinite(value)) values[child.getProperty("id").toString()] = value;
         }
-        slots_[static_cast<size_t>(juce::jlimit(0, 1, static_cast<int>(slot.getProperty("index", 0))))] = std::move(values);
+        slots_[static_cast<size_t>(juce::jlimit(0, 1, static_cast<int>(slot.getProperty("index", 0))))] = Slot{ std::move(values), slot.getProperty("name").toString() };
     }
 }
 

@@ -11,23 +11,21 @@ juce::String withComma(float value, int decimals) { return juce::String(value, d
 
 float numberFrom(const juce::String& text) { return text.replaceCharacter(',', '.').getFloatValue(); }
 
+// The text carries the unit, because some hosts would print a separate label after it again.
 juce::AudioParameterFloatAttributes percentText() {
     return juce::AudioParameterFloatAttributes()
-        .withLabel("%")
         .withStringFromValueFunction([](float v, int) { return juce::String(juce::roundToInt(v)) + "%"; })
         .withValueFromStringFunction([](const juce::String& t) { return numberFrom(t); });
 }
 
 juce::AudioParameterFloatAttributes decibelText() {
     return juce::AudioParameterFloatAttributes()
-        .withLabel("dB")
         .withStringFromValueFunction([](float v, int) { return withComma(v, 1) + " dB"; })
         .withValueFromStringFunction([](const juce::String& t) { return numberFrom(t); });
 }
 
 juce::AudioParameterFloatAttributes frequencyText() {
     return juce::AudioParameterFloatAttributes()
-        .withLabel("Hz")
         .withStringFromValueFunction([](float v, int) {
             return v < 1000.0f ? juce::String(juce::roundToInt(v)) + " Hz" : withComma(v / 1000.0f, 2) + " kHz";
         })

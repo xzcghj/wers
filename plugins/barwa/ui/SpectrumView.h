@@ -11,8 +11,8 @@ namespace barwa {
 class SpectrumView final : public juce::Component {
 public:
     explicit SpectrumView(BarwaProcessor& processor);
-    // Called by the editor's timer.
-    void refresh(int bands);
+    // Called by the editor's timer. Says whether new sound arrived.
+    bool refresh(int bands);
     void paint(juce::Graphics&) override;
     void resized() override;
     void mouseMove(const juce::MouseEvent&) override;
@@ -23,6 +23,7 @@ public:
 
     int handleCount() const noexcept { return bands_ - 1; }
     float handleX(int index) const;
+    float loudestShownDb() const;
 private:
     static constexpr int kFftSize = 2048;
     static constexpr int kPoints = 256;

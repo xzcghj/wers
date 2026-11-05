@@ -12,6 +12,8 @@ public:
     void pickSlot(int index);
     void copyToOtherSlot();
     void saveAs(const juce::String& name);
+    void loadNamed(const juce::String& name);
+    juce::String shownName() const { return name_.getButtonText(); }
     // Called by the editor's timer, for changes that come from a loaded project.
     void refresh();
     void resized() override;

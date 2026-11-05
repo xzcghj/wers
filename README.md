@@ -51,7 +51,7 @@ Saturator, który dodaje gęstość i barwę samogłoskom, a głoski syczące zo
 
 1. Wstaw Barwę na ślad wokalu. Maska głosek startuje od 100%. Na śladach nazwanych na przykład `beat`, `bit`, `instrumental`, `instr`, `prod`, `master` albo `mix` sama ustawia się na 0%.
 2. Podnoś **Drive** w pierwszym paśmie i wybierz charakter. Do 0 dB dźwięk przechodzi bez żadnej zmiany, a różnica narasta płynnie w pierwszych 3 dB suwaka.
-3. **Auto poziom** trzyma głośność taką jak na wejściu, więc porównujesz brzmienie, a nie poziom.
+3. **Auto poziom** trzyma głośność taką jak na wejściu, więc porównujesz brzmienie, a nie poziom. Działa tam, gdzie trafia barwa, więc to, co maska zostawia czyste, zostaje na swoim poziomie.
 4. **Delta** pozwala posłuchać samego tego, co wtyczka dodaje.
 5. Jeśli jedno ustawienie nie pasuje do całego dźwięku, wybierz 2 albo 3 **pasma** i przesuń podziały myszą na widmie. Każde pasmo ma własny charakter, Drive i Mix.
 

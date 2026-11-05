@@ -1,5 +1,4 @@
 #include "BarwaEditor.h"
-#include "PresetBar.h"
 #include "Strings.h"
 
 namespace barwa {
@@ -317,8 +316,10 @@ void BarwaEditor::timerCallback() {
     if (bands != root_->shownBands) root_->layoutColumns();
     root_->updateColumnTexts();
     root_->presetBar.refresh();
-    root_->spectrum.refresh(bands);
-    root_->strip.push(processor_.maskNow(), state.getRawParameterValue(ids::mask)->load() > 0.05f);
+    ticksWithoutSound_ = root_->spectrum.refresh(bands) ? 0 : ticksWithoutSound_ + 1;
+    // Without sound the strip has nothing to tell, so it stands still.
+    constexpr int kRestAfterTicks = 10;
+    if (ticksWithoutSound_ < kRestAfterTicks) root_->strip.push(processor_.maskNow(), state.getRawParameterValue(ids::mask)->load() > 0.05f);
 }
 
 int BarwaEditor::visibleBandColumns() const {
@@ -326,5 +327,9 @@ int BarwaEditor::visibleBandColumns() const {
 }
 
 SpectrumView& BarwaEditor::spectrum() { return root_->spectrum; }
+
+MaskStrip& BarwaEditor::maskStrip() { return root_->strip; }
+
+wers::ui::PresetBar& BarwaEditor::presetBar() { return root_->presetBar; }
 
 } // namespace barwa

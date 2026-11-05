@@ -13,9 +13,12 @@ inline constexpr const char* presetSaveTip = "Zapisuje obecne ustawienia jako no
 inline constexpr const char* presetSlotTip = "Dwa zestawy ustawień do porównania. Oba zapisują się w projekcie.";
 inline constexpr const char* presetCopyTip = "Kopiuje obecne ustawienia do drugiego zestawu.";
 
+// These show where the name of the preset usually is, so they stay short.
 inline constexpr const char* presetNeedsName = "Podaj nazwę presetu.";
-inline constexpr const char* presetIsFactory = "Ta nazwa należy do presetu fabrycznego.";
-inline constexpr const char* presetNoFolder = "Nie mogę utworzyć folderu na presety.";
-inline constexpr const char* presetNoWrite = "Nie mogę zapisać pliku presetu.";
+inline constexpr const char* presetIsFactory = "To nazwa presetu fabrycznego.";
+inline constexpr const char* presetNoFolder = "Nie mogę utworzyć folderu.";
+inline constexpr const char* presetNoWrite = "Nie mogę zapisać presetu.";
+inline constexpr const char* presetNoRead = "Nie mogę wczytać presetu.";
+inline constexpr const char* presetNoDelete = "Nie mogę usunąć presetu.";
 
 } // namespace wers::ui::text
