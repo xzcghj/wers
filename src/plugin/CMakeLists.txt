@@ -97,6 +97,7 @@ if(WERS_BUILD_TESTS)
     endfunction()
 
     wers_add_plugin_program(wers_plugin_tests ../../tests/plugin/plugin_tests.cpp)
+    target_compile_definitions(wers_plugin_tests PRIVATE "WERS_TEST_DATA_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/../../tests/plugin/data\"")
     if(WERS_WITH_WHISPER)
         add_dependencies(wers_plugin_tests wers_whisper)
         target_compile_definitions(wers_plugin_tests PRIVATE "WERS_TEST_HELPER=\"$<TARGET_FILE:wers_whisper>\"")

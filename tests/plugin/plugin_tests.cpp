@@ -340,6 +340,69 @@ TEST_CASE("full round: two linked instances, analysis, fix, render, save and rel
     beatProc->setPlayHead(nullptr);
 }
 
+namespace {
+// Writes the fixture below from synthetic sound. Run once per version whose projects must keep opening.
+void writeStateFixture(const juce::File& file) {
+    const double fs = 48000.0;
+    auto vocalProc = std::make_unique<WersProcessor>();
+    auto beatProc = std::make_unique<WersProcessor>();
+    setParam(*vocalProc, ids::group, 5.0f);
+    setParam(*beatProc, ids::group, 5.0f);
+    setParam(*beatProc, ids::role, 1.0f);
+    pump(300);
+    vocalProc->prepareToPlay(fs, 512);
+    beatProc->prepareToPlay(fs, 512);
+    const int n = static_cast<int>(fs * 8);
+    auto vocal = voiceLike(n, fs);
+    auto beat = noiseBuffer(2, n, 0.6f, 9);
+    FakeHead vh, bh;
+    vocalProc->setPlayHead(&vh);
+    beatProc->setPlayHead(&bh);
+    vocalProc->startAnalysis();
+    runBlocks(*vocalProc, vh, vocal, 512);
+    runBlocks(*beatProc, bh, beat, 512);
+    vh.playing = false;
+    for (int i = 0; i < 400 && vocalProc->session().phase() != SessionPhase::Ready; ++i) {
+        juce::AudioBuffer<float> quiet(2, 512); quiet.clear();
+        juce::MidiBuffer m;
+        vocalProc->processBlock(quiet, m);
+        pump(25);
+    }
+    REQUIRE(vocalProc->session().phase() == SessionPhase::Ready);
+    vocalProc->session().fixAllBelow(kScoreTarget, Device::Phone);
+    vocalProc->session().waitIdle();
+    juce::MemoryBlock saved;
+    vocalProc->getStateInformation(saved);
+    REQUIRE(file.getParentDirectory().createDirectory().wasOk());
+    REQUIRE(file.replaceWithData(saved.getData(), saved.getSize()));
+    vocalProc->setPlayHead(nullptr);
+    beatProc->setPlayHead(nullptr);
+}
+} // namespace
+
+TEST_CASE("a project saved by version 0.1.0 still opens") {
+    if (const char* out = std::getenv("WERS_WRITE_STATE_FIXTURE")) {
+        writeStateFixture(juce::File(juce::String(out)));
+        return;
+    }
+    juce::MemoryBlock data;
+    REQUIRE(juce::File(WERS_TEST_DATA_DIR).getChildFile("state_0_1_0.bin").loadFileAsData(data));
+    WersProcessor p;
+    p.setStateInformation(data.getData(), static_cast<int>(data.getSize()));
+    pump(300);
+    CHECK(p.role() == Role::Vocal);
+    CHECK(p.groupNumber() == 6);
+    CHECK(p.session().phase() == SessionPhase::Ready);
+    const auto res = p.session().result();
+    REQUIRE(res);
+    CHECK(res->words.size() >= 5);
+    CHECK(std::any_of(res->words.begin(), res->words.end(), [](const Word& w) { return w.fix.active; }));
+    REQUIRE(p.group() != nullptr);
+    bool planThere = false;
+    for (int s = 0; s < kLinkSlots; ++s) if (const Plan* plan = p.group()->plan(s)) planThere = planThere || !plan->events.empty();
+    CHECK(planThere);
+}
+
 TEST_CASE("audio keeps running while the message thread changes everything") {
     const double fs = 48000.0;
     WersProcessor vocal, beat;
