@@ -40,7 +40,7 @@ if not errorlevel 1 (
     if errorlevel 1 ( echo FAILED configure>> "%STATUS%" & goto end )
     echo build %TIME%>> "%STATUS%"
     echo   Kompilacja...
-    cmake --build "%BUILD%" --config Release --parallel --target wers_tests wers_dsp_tests wers_plugin_tests wers_ui_shots wers_cli wers_whisper WERS_VST3 WersProbe_VST3 barwa_tests barwa_plugin_tests barwa_ui_shots WersBarwa_VST3 -- /m /nologo /v:m > "%LOGS%\build.log" 2>&1
+    cmake --build "%BUILD%" --config Release --parallel --target wers_tests wers_dsp_tests wers_plugin_tests wers_ui_shots wers_cli wers_whisper WERS_VST3 WersProbe_VST3 barwa_tests barwa_plugin_tests barwa_ui_shots barwa_measure WersBarwa_VST3 -- /m /nologo /v:m > "%LOGS%\build.log" 2>&1
     if errorlevel 1 ( echo FAILED build>> "%STATUS%" & goto end )
     echo PASSED build %TIME%>> "%STATUS%"
     if exist "%ROOT%\WERS.vst3" rmdir /s /q "%ROOT%\WERS.vst3"
@@ -91,6 +91,23 @@ if not errorlevel 1 (
     ) else (
         echo FAILED pluginval download>> "%STATUS%"
     )
+)
+
+echo %JOB% | findstr /c:"measure" >nul
+if not errorlevel 1 (
+    rem Measures on the songs named in measure_list.txt. Only numbers are written.
+    echo measure %TIME%>> "%STATUS%"
+    echo   Pomiary Barwy na numerach...
+    "%BUILD%\plugins\barwa\Release\barwa_measure.exe" --list "%ROOT%\measure_list.txt" --out "%LOGS%\measure.tsv" > "%LOGS%\measure.log" 2>&1
+    if errorlevel 1 ( echo FAILED measure>> "%STATUS%" ) else ( echo PASSED measure %TIME%>> "%STATUS%" )
+)
+
+echo %JOB% | findstr /c:"cpu" >nul
+if not errorlevel 1 (
+    echo cpu %TIME%>> "%STATUS%"
+    echo   Pomiar obciazenia procesora...
+    "%BUILD%\plugins\barwa\Release\barwa_measure.exe" --cpu > "%LOGS%\cpu.log" 2>&1
+    if errorlevel 1 ( echo FAILED cpu>> "%STATUS%" ) else ( echo PASSED cpu>> "%STATUS%" )
 )
 
 echo %JOB% | findstr /c:"model" >nul

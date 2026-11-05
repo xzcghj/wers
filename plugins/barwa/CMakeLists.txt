@@ -7,6 +7,15 @@ target_include_directories(barwa_dsp PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/dsp)
 target_link_libraries(barwa_dsp PUBLIC wers_dsp)
 target_compile_options(barwa_dsp PRIVATE ${WERS_WARNINGS})
 
+# Measurements on real songs and of the processor, on the user's computer. They write only numbers.
+add_library(barwa_measure_lib STATIC tools/MeasureSong.cpp)
+target_include_directories(barwa_measure_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/tools)
+target_link_libraries(barwa_measure_lib PUBLIC barwa_dsp wers_test_support)
+target_compile_options(barwa_measure_lib PRIVATE ${WERS_WARNINGS})
+add_executable(barwa_measure tools/barwa_measure.cpp)
+target_link_libraries(barwa_measure PRIVATE barwa_measure_lib)
+target_compile_options(barwa_measure PRIVATE ${WERS_WARNINGS})
+
 if(WERS_BUILD_TESTS)
     add_executable(barwa_tests
         tests/test_main.cpp
@@ -14,7 +23,7 @@ if(WERS_BUILD_TESTS)
         tests/test_engine.cpp
     )
     target_include_directories(barwa_tests PRIVATE ${doctest_SOURCE_DIR}/doctest)
-    target_link_libraries(barwa_tests PRIVATE barwa_dsp wers_test_support)
+    target_link_libraries(barwa_tests PRIVATE barwa_dsp barwa_measure_lib wers_test_support)
     target_compile_options(barwa_tests PRIVATE ${WERS_WARNINGS})
     add_test(NAME barwa_tests COMMAND barwa_tests)
 endif()

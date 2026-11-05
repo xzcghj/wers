@@ -1,5 +1,6 @@
 #pragma once
 // Minimal WAV reader and writer for the offline tools (PCM 16/24/32 and float 32).
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -10,14 +11,8 @@ namespace wers::wav {
 
 struct Audio { int rate = 0; int channels = 0; std::vector<std::vector<float>> ch; };
 
-inline bool read(const std::string& path, Audio& a) {
-    FILE* f = std::fopen(path.c_str(), "rb");
-    if (!f) return false;
-    std::fseek(f, 0, SEEK_END); const long size = std::ftell(f); std::fseek(f, 0, SEEK_SET);
-    std::vector<uint8_t> d(static_cast<size_t>(size));
-    const size_t got = std::fread(d.data(), 1, d.size(), f);
-    std::fclose(f);
-    if (got != d.size() || d.size() < 44 || std::memcmp(d.data(), "RIFF", 4) || std::memcmp(d.data() + 8, "WAVE", 4)) return false;
+inline bool readBytes(const std::vector<uint8_t>& d, Audio& a) {
+    if (d.size() < 44 || std::memcmp(d.data(), "RIFF", 4) || std::memcmp(d.data() + 8, "WAVE", 4)) return false;
     int fmt = 0, bits = 0; size_t p = 12;
     while (p + 8 <= d.size()) {
         const uint32_t len = d[p + 4] | (d[p + 5] << 8) | (d[p + 6] << 16) | (static_cast<uint32_t>(d[p + 7]) << 24);
@@ -45,6 +40,17 @@ inline bool read(const std::string& path, Audio& a) {
         p += 8 + len + (len & 1u);
     }
     return false;
+}
+
+inline bool read(const std::string& path, Audio& a) {
+    FILE* f = std::fopen(path.c_str(), "rb");
+    if (!f) return false;
+    std::fseek(f, 0, SEEK_END); const long size = std::ftell(f); std::fseek(f, 0, SEEK_SET);
+    std::vector<uint8_t> d(static_cast<size_t>(size));
+    const size_t got = std::fread(d.data(), 1, d.size(), f);
+    std::fclose(f);
+    if (got != d.size()) return false;
+    return readBytes(d, a);
 }
 
 inline bool write(const std::string& path, const Audio& a) {

@@ -2,11 +2,15 @@
 #include "BarwaEngine.h"
 #include "Fft.h"
 #include "Measure.h"
+#include "MeasureSong.h"
 #include "TestSignals.h"
+#include "WavIO.h"
 #include <atomic>
 #include <complex>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <new>
 #include <random>
@@ -536,6 +540,70 @@ TEST_CASE("fuzz never poisons") {
         }
         const int tail = static_cast<int>(fs * 0.1);
         CHECK(std::abs(rmsDb(left, static_cast<int>(x.size()) - tail) - rmsDb(x, static_cast<int>(x.size()) - tail)) < 1.0);
+    }
+}
+
+TEST_CASE("measuring a song finds what the mask does") {
+    const auto s = makeSyllables(kFs, 8);
+    const auto result = measureSong(s.signal, kFs);
+    MESSAGE("sibilant frames " << result.sibFrames << ", vowel frames " << result.vowelFrames << ", sibilants down " << result.sibDropDb
+            << " dB, vowels down " << result.vowelDropDb << " dB, level " << result.levelDiffDb << " dB, peak " << result.peakDiffDb << " dB");
+    CHECK(result.seconds == doctest::Approx(static_cast<double>(s.signal.size()) / kFs));
+    CHECK(result.sibFrames >= 50);
+    CHECK(result.vowelFrames >= 100);
+    CHECK(result.sibDropDb >= 12.0);
+    CHECK(result.vowelDropDb <= 1.0);
+    CHECK(std::abs(result.levelDiffDb) <= 1.0);
+    CHECK(result.peakDiffDb <= 1.0);
+}
+
+TEST_CASE("the measurement file holds only numbers") {
+    namespace fs = std::filesystem;
+    const auto folder = fs::temp_directory_path() / "barwa_measure_test";
+    fs::create_directories(folder);
+    const auto s = makeSyllables(kFs, 3);
+    wav::Audio audio;
+    audio.rate = static_cast<int>(kFs);
+    audio.channels = 2;
+    audio.ch = { s.signal, s.signal };
+    const std::string name = "Żółć numer sekretny";
+    const auto first = folder / fs::path(std::u8string(reinterpret_cast<const char8_t*>(name.data()), name.size()) + u8".wav");
+    {
+        // Written through the path object, so the name with Polish letters also works on Windows.
+        const auto temporary = folder / "temporary.wav";
+        REQUIRE(wav::write(temporary.string(), audio));
+        fs::rename(temporary, first);
+    }
+    const auto list = folder / "list.txt";
+    const auto out = folder / "out.tsv";
+    {
+        std::ofstream file(list, std::ios::binary);
+        const auto bytes = first.u8string();
+        file << "\xEF\xBB\xBF" << std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size()) << "\r\n";
+        file << (folder / "nie ma takiego pliku.wav").string() << "\n\n";
+    }
+    REQUIRE(measureList(list.u8string(), out.u8string()) == 1);
+    std::ifstream result(out, std::ios::binary);
+    std::string text((std::istreambuf_iterator<char>(result)), std::istreambuf_iterator<char>());
+    CAPTURE(text);
+    CHECK(text.rfind("index\tseconds\tsibFrames\tvowelFrames\tsibDropDb\tvowelDropDb\tlevelDiffDb\tpeakDiffDb\n", 0) == 0);
+    CHECK(text.find("sekretny") == std::string::npos);
+    CHECK(text.find("wav") == std::string::npos);
+    CHECK(text.find(":") == std::string::npos);
+    CHECK(text.find("/") == std::string::npos);
+    CHECK(text.find("\\") == std::string::npos);
+    // One row a file in the list: a file that could not be read says so with zero seconds.
+    CHECK(std::count(text.begin(), text.end(), '\n') == 3);
+    CHECK(text.find("\n2\t0.0") != std::string::npos);
+    fs::remove_all(folder);
+}
+
+TEST_CASE("processor use is measured on the heaviest settings") {
+    const auto results = measureCpu(0.5);
+    REQUIRE(results.size() == 4);
+    for (double percent : results) {
+        CHECK(percent > 0.0);
+        CHECK(percent < 100.0);
     }
 }
 
