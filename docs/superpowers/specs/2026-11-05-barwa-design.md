@@ -87,7 +87,7 @@ Każdy kształt ma wzmocnienie 1 dla małych sygnałów, a emfaza i deemfaza są
 | --- | --- | --- |
 | Lampa | Tangens hiperboliczny z małym przesunięciem pracy, które zależy od poziomu | Sinus 1 kHz, −18 dBFS, Drive 12 dB: 2. harmoniczna co najmniej 3 dB nad 3. |
 | Taśma | Miękki kształt między emfazą a deemfazą wysokich tonów | Ten sam poziom i Drive, przy 96 kHz, bo przy 48 kHz 3. harmoniczna 8 kHz wypada poza pasmem: zniekształcenia przy 8 kHz co najmniej 6 dB wyższe niż przy 1 kHz |
-| Transformator | Półka +8 dB zamiast +12 dB | Przy Drive 24 dB i Masce 100% głos tracił więcej, niż Auto poziom może oddać w swoich ±12 dB. Przy +9 dB brakowało 1,04 dB, przy +8 dB brakuje 0,91 dB, a granica to 1 dB |
+| Transformator | Miękki kształt między emfazą a deemfazą niskich tonów | Ten sam poziom i Drive: zniekształcenia przy 100 Hz co najmniej 6 dB wyższe niż przy 1 kHz |
 | Tranzystor | Symetryczny kształt z twardszym kolanem | Sinus 1 kHz, −18 dBFS, Drive 12 dB: 3. harmoniczna co najmniej 12 dB nad 2. |
 
 ### Maska głosek
@@ -210,9 +210,10 @@ To, co w trakcie pracy zmieniło się względem tekstu powyżej, i dlaczego.
 | Auto poziom a stereo | Liczy moc obu kanałów osobno | Dźwięk, który znosi się w sumie mono, wychodził nawet 16 dB za cicho |
 | Test aliasów | Szuka składników do 20 kHz, a nie do częstotliwości Nyquista | Filtr półpasmowy jest −6 dB dokładnie przy starej częstotliwości Nyquista, więc tego, co leży tuż nad nią, kaskada półpasmowa nie usunie przy żadnym współczynniku. Ostrzejszy filtr to około 3 razy większe obciążenie przy 48 kHz. **Ten punkt obniża cel ze specyfikacji i wymaga zgody użytkownika**. Użytkownik się na to zgodził |
 | Transformator | Półka +8 dB zamiast +12 dB | Przy Drive 24 dB i Masce 100% głos tracił więcej, niż Auto poziom może oddać w swoich ±12 dB. Przy +9 dB brakowało 1,04 dB, przy +8 dB brakuje 0,91 dB, a granica to 1 dB |
+| Taśma | Tabela i wielomian zamiast funkcji potęgowej, ta sama krzywa z dokładnością do −110 dB | Funkcja potęgowa zajmowała więcej czasu niż reszta krzywej, a Taśma przekraczała 5% rdzenia. Teraz najgorszy charakter to 4,32% |
 | Maska a jasne samogłoski | `w = min(1, samogłoska / 0,75) + 0,35 × zwarta`, a nie sama przynależność do samogłosek | Klasyfikator z WERS-a uznaje wysunięty, jasny głos tylko częściowo za samogłoskę, więc na dwóch prawdziwych numerach samogłoski traciły 1,2 dB barwy przy celu 1 dB. Teraz tracą 0,2 dB, a syczące tracą nadal ponad 20 dB. Sam klasyfikator się nie zmienił, więc WERS działa jak wcześniej |
 | Ton | Jeden filtr nachylenia pierwszego rzędu zamiast dwóch półek | Te same skrajne wzmocnienia, dokładnie 0 dB przy 1 kHz, jeden stan zamiast dwóch |
 | Zmiana pasm i charakteru | Po przyciszeniu 10 ms ciszy, potem pogłaśnianie | Filtry są wtedy zerowane i potrzebują tego czasu, żeby nie było ich słychać |
 | Maska na bicie | Test porównuje poziom z wejściem i dopuszcza 1 dB ponad to, co saturacja z poprawką robi bez maski | Sama saturacja z poprawką podnosi to, co leży między uderzeniami |
 | `barwa_measure` | Dwie dodatkowe kolumny: poziom syczących i samogłosek względem wejścia | Pokazują to, co słychać, a nie tylko ile barwy zostało dodane |
-| Nie jest jeszcze spełnione | Maska zamyka się kilka do kilkunastu milisekund po początku głoski syczącej, a nie przed nią. Decyzja po odsłuchu na prawdziwych numerach | Klasyfikator z WERS-a sam potrzebuje więcej czasu, niż daje 4 ms wyprzedzenia. Więcej wyprzedzenia to większe opóźnienie wtyczki |
+| Maska reaguje później | Maska zamyka się kilka do kilkunastu milisekund po początku głoski syczącej, a nie przed nią. Po odsłuchu na prawdziwych numerach użytkownik uznał, że jest dobrze, więc tak zostaje | Klasyfikator z WERS-a sam potrzebuje więcej czasu, niż daje 4 ms wyprzedzenia. Więcej wyprzedzenia to większe opóźnienie wtyczki |
