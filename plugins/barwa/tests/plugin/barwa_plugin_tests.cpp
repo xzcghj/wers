@@ -1,7 +1,11 @@
 // Tests of the whole plugin through the same entry points a host uses.
 #define DOCTEST_CONFIG_IMPLEMENT
 #include "doctest.h"
+#include "PresetBar.h"
+#include "PresetStore.h"
+#include "TestSignals.h"
 #include "plugin/BarwaProcessor.h"
+#include "plugin/FactoryPresets.h"
 #include "ui/BarwaEditor.h"
 #include <atomic>
 #include <cstdlib>
@@ -604,6 +608,309 @@ TEST_CASE("band columns follow the band count") {
         CHECK(editor->visibleBandColumns() == bands);
         CHECK(editor->spectrum().handleCount() == bands - 1);
     }
+}
+
+namespace {
+
+const juce::StringArray kExcluded{ ids::quality, ids::bypass, ids::delta, ids::solo1, ids::solo2, ids::solo3 };
+
+// A fresh folder for one test, gone at the end of it.
+struct TempFolder {
+    juce::TemporaryFile holder;
+    juce::File path = holder.getFile();
+    TempFolder() { path.createDirectory(); }
+    ~TempFolder() { path.deleteRecursively(); }
+};
+
+void changeEverything(BarwaProcessor& p) {
+    setParam(p, ids::bands, 2.0f);
+    setParam(p, ids::xover1, 321.0f);
+    setParam(p, ids::xover2, 4567.0f);
+    setParam(p, ids::char1, 1.0f);
+    setParam(p, ids::char2, 2.0f);
+    setParam(p, ids::char3, 3.0f);
+    setParam(p, ids::drive1, 5.5f);
+    setParam(p, ids::drive2, 6.5f);
+    setParam(p, ids::drive3, 7.5f);
+    setParam(p, ids::bandMix1, 11.0f);
+    setParam(p, ids::bandMix2, 22.0f);
+    setParam(p, ids::bandMix3, 33.0f);
+    setParam(p, ids::mask, 44.0f);
+    setParam(p, ids::tone, -55.0f);
+    setParam(p, ids::mix, 66.0f);
+    setParam(p, ids::autoLevel, 0.0f);
+    setParam(p, ids::output, -7.0f);
+}
+
+std::map<juce::String, float> presetValues(BarwaProcessor& p) {
+    auto values = allValues(p);
+    for (const auto& id : kExcluded) values.erase(id);
+    return values;
+}
+
+} // namespace
+
+TEST_CASE("preset saves and loads exactly") {
+    TempFolder folder;
+    BarwaProcessor p;
+    p.prepareToPlay(48000.0, 256);
+    wers::ui::PresetStore store(p.state(), folder.path, factoryPresets(), kExcluded);
+    changeEverything(p);
+    const auto wanted = presetValues(p);
+    juce::String error;
+    REQUIRE(store.save("moje", error));
+    CHECK(error.isEmpty());
+    CHECK(store.names().contains("moje"));
+    CHECK(folder.path.getChildFile("moje.xml").existsAsFile());
+    const auto root = juce::parseXML(folder.path.getChildFile("moje.xml"));
+    REQUIRE(root != nullptr);
+    CHECK(root->hasTagName("WERS_PRESET"));
+    CHECK(root->getStringAttribute("plugin") == "BARWA");
+    CHECK(root->getIntAttribute("version") == 1);
+
+    REQUIRE(store.load(juce::String::fromUTF8("Czysty start")));
+    CHECK(presetValues(p) != wanted);
+
+    // What a preset must not touch stays as it is.
+    setParam(p, ids::quality, 2.0f);
+    setParam(p, ids::delta, 1.0f);
+    setParam(p, ids::bypass, 1.0f);
+    setParam(p, ids::solo2, 1.0f);
+    pump(50);
+    const int latency = p.getLatencySamples();
+    REQUIRE(store.load("moje"));
+    CHECK(presetValues(p) == wanted);
+    CHECK(getParam(p, ids::quality) == doctest::Approx(2.0f));
+    CHECK(getParam(p, ids::delta) == doctest::Approx(1.0f));
+    CHECK(getParam(p, ids::bypass) == doctest::Approx(1.0f));
+    CHECK(getParam(p, ids::solo2) == doctest::Approx(1.0f));
+    pump(50);
+    CHECK(p.getLatencySamples() == latency);
+
+    CHECK(store.remove("moje"));
+    CHECK_FALSE(store.names().contains("moje"));
+    CHECK_FALSE(store.load("moje"));
+    CHECK_FALSE(store.remove(juce::String::fromUTF8("Czysty start")));
+}
+
+TEST_CASE("factory presets are valid") {
+    const auto presets = factoryPresets();
+    CHECK(presets.size() >= 10);
+    const auto voice = wers::test::loudPhrase(48000.0, 5.0, -6.0);
+    const auto levelDb = [](const juce::AudioBuffer<float>& b, int from, int to) {
+        wers::KWeighting weight;
+        weight.prepare(48000.0);
+        double energy = 0.0;
+        for (int i = 0; i < to; ++i) {
+            const double v = weight.tick(static_cast<double>(b.getSample(0, i)));
+            if (i >= from) energy += v * v;
+        }
+        return 10.0 * std::log10(energy / (to - from) + 1e-30);
+    };
+    juce::StringArray seen;
+    for (const auto& preset : presets) {
+        CAPTURE(juce::String::fromUTF8(preset.name));
+        CHECK_FALSE(seen.contains(juce::String::fromUTF8(preset.name)));
+        seen.add(juce::String::fromUTF8(preset.name));
+        BarwaProcessor p;
+        for (const auto& [id, value] : preset.values) {
+            auto* parameter = p.state().getParameter(id);
+            REQUIRE(parameter != nullptr);
+            CHECK_FALSE(kExcluded.contains(id));
+            const auto range = p.state().getParameterRange(id);
+            CHECK(value >= range.start);
+            CHECK(value <= range.end);
+        }
+        TempFolder folder;
+        wers::ui::PresetStore store(p.state(), folder.path, presets, kExcluded);
+        REQUIRE(store.load(juce::String::fromUTF8(preset.name)));
+        p.prepareToPlay(48000.0, 256);
+        juce::AudioBuffer<float> audio(2, static_cast<int>(voice.size()));
+        audio.copyFrom(0, 0, voice.data(), audio.getNumSamples());
+        audio.copyFrom(1, 0, voice.data(), audio.getNumSamples());
+        juce::AudioBuffer<float> dry;
+        dry.makeCopyOf(audio);
+        runBlocks(p, audio, 256);
+        for (int i = 0; i < audio.getNumSamples(); ++i) REQUIRE(std::isfinite(audio.getSample(0, i)));
+        const int from = 96000, to = audio.getNumSamples();
+        const double change = levelDb(audio, from, to) - levelDb(dry, from, to);
+        MESSAGE(juce::String::fromUTF8(preset.name) << ": level " << change << " dB");
+        CHECK(std::abs(change) <= 1.0);
+    }
+}
+
+TEST_CASE("a preset missing a value uses the neutral default") {
+    TempFolder folder;
+    BarwaProcessor p;
+    wers::ui::PresetStore store(p.state(), folder.path, factoryPresets(), kExcluded);
+    setParam(p, ids::tone, 70.0f);
+    setParam(p, ids::drive1, 20.0f);
+    juce::String error;
+    REQUIRE(store.save("stary", error));
+    const auto file = folder.path.getChildFile("stary.xml");
+    auto xml = juce::parseXML(file);
+    REQUIRE(xml != nullptr);
+    for (auto* child : xml->getChildIterator())
+        if (child->getStringAttribute("id") == ids::tone) { xml->removeChildElement(child, true); break; }
+    REQUIRE(xml->writeTo(file));
+    setParam(p, ids::tone, 40.0f);
+    REQUIRE(store.load("stary"));
+    CHECK(getParam(p, ids::tone) == doctest::Approx(0.0f));
+    CHECK(getParam(p, ids::drive1) == doctest::Approx(20.0f));
+}
+
+TEST_CASE("A and B are kept in the project") {
+    BarwaProcessor a;
+    auto& store = a.presets();
+    setParam(a, ids::drive1, 10.0f);
+    store.storeSlot(0);
+    setParam(a, ids::drive1, 20.0f);
+    store.storeSlot(1);
+    setParam(a, ids::quality, 2.0f);
+    store.recallSlot(0);
+    CHECK(getParam(a, ids::drive1) == doctest::Approx(10.0f));
+    CHECK(getParam(a, ids::quality) == doctest::Approx(2.0f)); // slots leave out what presets leave out
+    store.setActiveSlot(1);
+
+    juce::MemoryBlock saved;
+    a.getStateInformation(saved);
+    BarwaProcessor b;
+    b.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
+    CHECK(b.presets().activeSlot() == 1);
+    b.presets().recallSlot(1);
+    CHECK(getParam(b, ids::drive1) == doctest::Approx(20.0f));
+    b.presets().recallSlot(0);
+    CHECK(getParam(b, ids::drive1) == doctest::Approx(10.0f));
+
+    // A slot that was never stored changes nothing, and copying fills it.
+    BarwaProcessor c;
+    setParam(c, ids::drive1, 15.0f);
+    c.presets().recallSlot(1);
+    CHECK(getParam(c, ids::drive1) == doctest::Approx(15.0f));
+    c.presets().storeSlot(0);
+    c.presets().copySlot(0, 1);
+    setParam(c, ids::drive1, 1.0f);
+    c.presets().recallSlot(1);
+    CHECK(getParam(c, ids::drive1) == doctest::Approx(15.0f));
+
+    // The state of a project is still the state of the parameters only for the host's own use.
+    const auto loaded = allValues(b);
+    b.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
+    CHECK(allValues(b) == allValues(a));
+    CHECK(loaded.size() == allValues(a).size());
+}
+
+TEST_CASE("awkward preset files") {
+    const auto polish = juce::String::fromUTF8("Żółć ą ę");
+    TempFolder folder;
+    BarwaProcessor p;
+    wers::ui::PresetStore store(p.state(), folder.path, factoryPresets(), kExcluded);
+    juce::String error;
+
+    SUBCASE("a Polish name") {
+        setParam(p, ids::drive1, 9.0f);
+        REQUIRE(store.save(polish, error));
+        CHECK(store.names().contains(polish));
+        setParam(p, ids::drive1, 1.0f);
+        REQUIRE(store.load(polish));
+        CHECK(getParam(p, ids::drive1) == doctest::Approx(9.0f));
+        CHECK(store.remove(polish));
+    }
+    SUBCASE("a folder that does not exist yet is created") {
+        wers::ui::PresetStore later(p.state(), folder.path.getChildFile("a").getChildFile("b"), factoryPresets(), kExcluded);
+        CHECK(later.names().size() == static_cast<int>(factoryPresets().size()));
+        CHECK(later.save("nowy", error));
+        CHECK(later.names().contains("nowy"));
+    }
+    SUBCASE("a folder that cannot be made") {
+        const auto file = folder.path.getChildFile("to jest plik");
+        REQUIRE(file.create().wasOk());
+        wers::ui::PresetStore blocked(p.state(), file.getChildFile("presety"), factoryPresets(), kExcluded);
+        CHECK(blocked.names().size() == static_cast<int>(factoryPresets().size()));
+        CHECK_FALSE(blocked.save("x", error));
+        CHECK(error.isNotEmpty());
+        CHECK_FALSE(blocked.load("x"));
+    }
+    SUBCASE("a file that cannot be written") {
+        REQUIRE(folder.path.getChildFile("zablokowany.xml").createDirectory().wasOk());
+        CHECK_FALSE(store.save("zablokowany", error));
+        CHECK(error.isNotEmpty());
+    }
+    SUBCASE("damaged and foreign files are left out") {
+        setParam(p, ids::drive1, 9.0f);
+        REQUIRE(folder.path.getChildFile("zepsuty.xml").replaceWithText("<WERS_PRESET plugin=\"BARWA\" version=\"1\"><PARAM id="));
+        REQUIRE(folder.path.getChildFile("obcy.xml").replaceWithText("<WERS_PRESET plugin=\"AKCENT\" version=\"1\"/>"));
+        REQUIRE(folder.path.getChildFile("inny.xml").replaceWithText("<COS_INNEGO/>"));
+        REQUIRE(folder.path.getChildFile("pusty.xml").create().wasOk());
+        REQUIRE(folder.path.getChildFile("notatki.txt").replaceWithText("nie preset"));
+        const auto names = store.names();
+        for (const char* bad : { "zepsuty", "obcy", "inny", "pusty", "notatki" }) {
+            CHECK_FALSE(names.contains(bad));
+            CHECK_FALSE(store.load(bad));
+        }
+        CHECK(getParam(p, ids::drive1) == doctest::Approx(9.0f));
+    }
+    SUBCASE("values that make no sense") {
+        REQUIRE(folder.path.getChildFile("dziwny.xml").replaceWithText(
+            "<WERS_PRESET plugin=\"BARWA\" version=\"1\"><PARAM id=\"drive1\" value=\"9999\"/><PARAM id=\"tone\" value=\"nan\"/><PARAM id=\"nieznany\" value=\"1\"/><PARAM id=\"quality\" value=\"0\"/></WERS_PRESET>"));
+        REQUIRE(store.load("dziwny"));
+        CHECK(getParam(p, ids::drive1) == doctest::Approx(36.0f));
+        CHECK(getParam(p, ids::tone) == doctest::Approx(0.0f));
+        CHECK(getParam(p, ids::quality) == doctest::Approx(1.0f));
+    }
+    SUBCASE("names that cannot be used") {
+        CHECK_FALSE(store.save("", error));
+        CHECK(error.isNotEmpty());
+        error.clear();
+        CHECK_FALSE(store.save("   ", error));
+        CHECK(error.isNotEmpty());
+        error.clear();
+        // A factory preset cannot be overwritten.
+        CHECK_FALSE(store.save(juce::String::fromUTF8("Czysty start"), error));
+        CHECK(error.isNotEmpty());
+        // A name with characters a file cannot have still gets a working preset.
+        error.clear();
+        CHECK(store.save("a/b:c", error));
+        CHECK(store.names().size() == static_cast<int>(factoryPresets().size()) + 1);
+    }
+}
+
+TEST_CASE("the preset bar walks through presets and A and B") {
+    TempFolder folder;
+    BarwaProcessor p;
+    wers::ui::PresetStore store(p.state(), folder.path, factoryPresets(), kExcluded);
+    wers::ui::PresetBar bar(store);
+    bar.setBounds(0, 0, 500, 36);
+    const auto names = store.names();
+    bar.step(1);
+    CHECK(store.currentName() == names[0]);
+    bar.step(1);
+    CHECK(store.currentName() == names[1]);
+    bar.step(-1);
+    bar.step(-1);
+    CHECK(store.currentName() == names[names.size() - 1]);
+    bar.step(1);
+    CHECK(store.currentName() == names[0]);
+
+    // Going to B keeps A, and going back brings it again.
+    setParam(p, ids::drive1, 10.0f);
+    CHECK(store.activeSlot() == 0);
+    bar.pickSlot(1);
+    CHECK(store.activeSlot() == 1);
+    CHECK(getParam(p, ids::drive1) == doctest::Approx(10.0f));
+    setParam(p, ids::drive1, 25.0f);
+    bar.pickSlot(0);
+    CHECK(getParam(p, ids::drive1) == doctest::Approx(10.0f));
+    bar.pickSlot(1);
+    CHECK(getParam(p, ids::drive1) == doctest::Approx(25.0f));
+    bar.copyToOtherSlot();
+    bar.pickSlot(0);
+    CHECK(getParam(p, ids::drive1) == doctest::Approx(25.0f));
+
+    juce::String shown;
+    bar.saveAs(juce::String::fromUTF8("Mój"));
+    CHECK(store.currentName() == juce::String::fromUTF8("Mój"));
+    CHECK(store.names().contains(juce::String::fromUTF8("Mój")));
 }
 
 int main(int argc, char** argv) {

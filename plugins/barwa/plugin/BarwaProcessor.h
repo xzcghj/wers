@@ -1,5 +1,6 @@
 #pragma once
 #include "BarwaEngine.h"
+#include "FactoryPresets.h"
 #include "Params.h"
 
 namespace barwa {
@@ -39,6 +40,7 @@ public:
     void updateTrackProperties(const TrackProperties& properties) override;
 
     juce::AudioProcessorValueTreeState& state() noexcept { return apvts_; }
+    wers::ui::PresetStore& presets() noexcept { return presets_; }
     float maskNow() const noexcept { return engine_.maskNow(); }
     double hostRate() const noexcept { return fs_; }
     // Takes n samples of the input and the output for the display, if that many are waiting.
@@ -58,6 +60,7 @@ private:
     void processChunk(float* const* channels, int count, int n, bool bypassed) noexcept;
 
     juce::AudioProcessorValueTreeState apvts_;
+    wers::ui::PresetStore presets_;
     std::atomic<float>* pBands_, *pXover1_, *pXover2_, *pMask_, *pTone_, *pMix_, *pAutoLevel_, *pOutput_, *pDelta_, *pQuality_, *pBypass_;
     std::array<std::atomic<float>*, 3> pChar_{}, pDrive_{}, pBandMix_{}, pSolo_{};
 

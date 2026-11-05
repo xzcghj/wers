@@ -14,5 +14,7 @@ juce_add_binary_data(WersFonts HEADER_NAME "WersFontsData.h" NAMESPACE WersFonts
 add_library(wers_ui INTERFACE)
 target_sources(wers_ui INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/Theme.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/ui/Controls.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui/Controls.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui/PresetStore.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui/PresetBar.cpp)
 target_include_directories(wers_ui INTERFACE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/ui)

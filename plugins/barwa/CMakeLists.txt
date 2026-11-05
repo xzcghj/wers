@@ -24,6 +24,7 @@ if(WERS_BUILD_PLUGIN)
     target_sources(WersBarwa PRIVATE
         plugin/Params.cpp
         plugin/BarwaProcessor.cpp
+        plugin/FactoryPresets.cpp
         ui/BarwaEditor.cpp
         ui/SpectrumView.cpp
         ui/MaskStrip.cpp)
@@ -34,5 +35,6 @@ if(WERS_BUILD_PLUGIN)
         add_test(NAME barwa_plugin_tests COMMAND barwa_plugin_tests)
         wers_add_plugin_program(WersBarwa barwa_ui_shots tests/plugin/barwa_ui_shots.cpp)
         target_link_libraries(barwa_ui_shots PRIVATE wers_test_support)
+        target_link_libraries(barwa_plugin_tests PRIVATE wers_test_support)
     endif()
 endif()

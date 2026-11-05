@@ -18,7 +18,8 @@ BarwaProcessor::BarwaProcessor()
     : AudioProcessor(BusesProperties()
                          .withInput("Input", juce::AudioChannelSet::stereo(), true)
                          .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
-      apvts_(*this, nullptr, "BARWA", createParameterLayout()) {
+      apvts_(*this, nullptr, "BARWA", createParameterLayout()),
+      presets_(apvts_, juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("WERS").getChildFile("presets").getChildFile("barwa"), factoryPresets(), presetExcludedIds()) {
     pBands_ = apvts_.getRawParameterValue(ids::bands);
     pXover1_ = apvts_.getRawParameterValue(ids::xover1);
     pXover2_ = apvts_.getRawParameterValue(ids::xover2);
@@ -219,6 +220,7 @@ void BarwaProcessor::getStateInformation(juce::MemoryBlock& dest) {
     out.writeInt(kStateVersion);
     auto tree = apvts_.copyState();
     tree.setProperty("uiScale", uiScale_.load(), nullptr);
+    tree.appendChild(presets_.toTree(), nullptr);
     juce::MemoryOutputStream xml;
     if (auto e = tree.createXml()) e->writeTo(xml, juce::XmlElement::TextFormat().withoutHeader().singleLine());
     out.writeInt(static_cast<int>(xml.getDataSize()));
@@ -238,6 +240,11 @@ void BarwaProcessor::setStateInformation(const void* data, int size) {
     if (e == nullptr || !e->hasTagName(apvts_.state.getType().toString())) return;
     auto tree = juce::ValueTree::fromXml(*e);
     if (!tree.isValid()) return;
+    const auto presetTree = tree.getChildWithName(wers::ui::PresetStore::treeType());
+    if (presetTree.isValid()) {
+        presets_.fromTree(presetTree);
+        tree.removeChild(presetTree, nullptr);
+    }
     // What the file does not mention takes its neutral value, so an old project sounds as it did.
     for (auto* param : getParameters()) {
         auto* withId = dynamic_cast<juce::RangedAudioParameter*>(param);

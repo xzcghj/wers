@@ -1,4 +1,5 @@
 #include "BarwaEditor.h"
+#include "PresetBar.h"
 #include "Strings.h"
 
 namespace barwa {
@@ -145,11 +146,11 @@ private:
 class BarwaEditor::Root final : public juce::Component {
 public:
     explicit Root(BarwaProcessor& p)
-        : processor(p), spectrum(p),
+        : processor(p), presetBar(p.presets()), spectrum(p),
           column1(p, 0, ids::char1, ids::drive1, ids::bandMix1, ids::solo1),
           column2(p, 1, ids::char2, ids::drive2, ids::bandMix2, ids::solo2),
           column3(p, 2, ids::char3, ids::drive3, ids::bandMix3, ids::solo3) {
-        for (juce::Component* c : std::initializer_list<juce::Component*>{ &bandRow, &delta, &bypass, &spectrum, &strip, &column1, &column2, &column3, &mask, &tone, &mix, &output, &autoLevel, &quality }) addAndMakeVisible(c);
+        for (juce::Component* c : std::initializer_list<juce::Component*>{ &bandRow, &presetBar, &delta, &bypass, &spectrum, &strip, &column1, &column2, &column3, &mask, &tone, &mix, &output, &autoLevel, &quality }) addAndMakeVisible(c);
         auto& state = p.state();
 
         bandRow.setItems({ "1", "2", "3" }, { 34, 34, 34 });
@@ -218,6 +219,7 @@ public:
         bandRow.setBounds(246, y, bandRow.preferredWidth(), h);
         bypass.setBounds(layout::width - 24 - 66, y, 66, h);
         delta.setBounds(bypass.getX() - 6 - 60, y, 60, h);
+        presetBar.setBounds(bandRow.getRight() + 16, y, delta.getX() - 16 - bandRow.getRight() - 16, h);
         spectrum.setBounds(0, layout::headerH, layout::width, layout::spectrumH);
         strip.setBounds(0, layout::headerH + layout::spectrumH, layout::width, layout::stripH);
 
@@ -265,6 +267,7 @@ public:
 
     BarwaProcessor& processor;
     SegmentRow bandRow, quality;
+    PresetBar presetBar;
     FlatButton delta{ pl(text::delta), FlatButton::Style::Outline };
     FlatButton bypass{ pl(text::bypass), FlatButton::Style::Outline };
     FlatButton autoLevel{ pl(text::autoLevel), FlatButton::Style::Outline };
@@ -313,6 +316,7 @@ void BarwaEditor::timerCallback() {
     const int bands = juce::roundToInt(state.getRawParameterValue(ids::bands)->load()) + 1;
     if (bands != root_->shownBands) root_->layoutColumns();
     root_->updateColumnTexts();
+    root_->presetBar.refresh();
     root_->spectrum.refresh(bands);
     root_->strip.push(processor_.maskNow(), state.getRawParameterValue(ids::mask)->load() > 0.05f);
 }
