@@ -67,7 +67,7 @@ uint32_t checksum(const uint8_t* d, size_t n) {
     return h;
 }
 
-inline uint8_t quantPsd(float db) { return static_cast<uint8_t>(std::clamp((db + 150.0f) * 2.0f, 0.0f, 255.0f)); }
+inline uint8_t quantPsd(float db) { return static_cast<uint8_t>(std::clamp((db + 150.0f) * 2.0f + 0.5f, 0.0f, 255.0f)); }
 inline float expandPsd(uint8_t q) { return q * 0.5f - 150.0f; }
 
 } // namespace

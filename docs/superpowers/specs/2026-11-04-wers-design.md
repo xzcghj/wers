@@ -85,6 +85,23 @@ Według makiety: granat, kratka, dwa zakreślacze, tekst jako główny ekran. Cz
 - End-to-end na prawdziwych śladach użytkownika: przewidywana ocena po naprawie kontra ocena po wyrenderowaniu dźwięku.
 - pluginval (poziom 10) na Linuksie i Windows, ładowanie w REAPERze na komputerze użytkownika.
 
+## Decyzje podjęte w trakcie budowy
+
+Testy na prawdziwych śladach zmieniły kilka założeń z tej specyfikacji. Obowiązuje to, co niżej.
+
+- **Rozpoznawanie w osobnym procesie.** `wers_whisper.exe` leży w paczce `WERS.vst3` i pracuje na niższym priorytecie.
+  Wtyczka nie zawiera ggml, więc awaria modelu nie zabiera ze sobą DAW-a. Efektem awarii jest tylko brak tekstu.
+- **Model large-v3-turbo-q5_0** (574 MB) zamiast small. Na polskim rapie słyszy wyraźnie więcej słów.
+- **Czas słów.** Czasy DTW z whisper.cpp wymagają wyłączenia flash attention. Potem słowa dociągam do sylab:
+  liczba sylab wynika z polskiej pisowni, a programowanie dynamiczne dopasowuje słowa do szczytów w paśmie samogłosek.
+  Słaby garb 20 dB pod sąsiednim głosem nie liczy się jako sylaba.
+- **Drugie przesłuchanie.** Ten sam model słucha też wokalu z bitem i zaznacza słowa, których już nie słyszy. To tylko
+  dodatkowa uwaga w panelu słowa. Krok jest pomijany na komputerach z mniej niż 8 wątkami.
+- **Suwaki.** Wtyczka stoi przed suwakiem śladu, a realne projekty mają suwaki od -5 do -10 dB. W REAPERze odczytuję
+  `D_VOL` śladu i folderów nad nim przez `IReaperHostApplication`, a oceny przeliczam od razu po ruchu suwaka.
+- **Grupy połączeń osobno dla każdego projektu**, żeby zakładki REAPERa się nie mieszały.
+- **Przełączanie urządzenia w roli Master** bez trzasku: wyciszenie i podgłośnienie po 6 ms.
+
 ## Poza zakresem wersji 1
 
 ARA2, AU/AAX, macOS, symulacja kodeka, eksport automatyki do DAW, klonowanie głosu, chmura.

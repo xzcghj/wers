@@ -18,7 +18,7 @@ public:
     std::vector<float> levelTrack;         // voice level of each frame, used to detect a changed vocal
     int mapFrames = 0;
 
-    static uint8_t quantise(float db) noexcept { return static_cast<uint8_t>(std::clamp((db + 120.0f) * 2.0f, 0.0f, 255.0f)); }
+    static uint8_t quantise(float db) noexcept { return static_cast<uint8_t>(std::clamp((db + 120.0f) * 2.0f + 0.5f, 0.0f, 255.0f)); }
     static float expand(uint8_t q) noexcept { return q * 0.5f - 120.0f; }
 
     // Vocal band level at time t. Looks 20 ms ahead, so a cut is already there when a sound starts.

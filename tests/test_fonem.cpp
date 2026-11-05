@@ -178,19 +178,20 @@ TEST_CASE("the test voice has the crest factor of a real one") {
 }
 
 TEST_CASE("density keeps the level and the peaks of a loud voice, and does not wreck it") {
-    const double fs = 48000;
-    const auto x = loudPhrase(fs, 8.0);
-    const int skip = static_cast<int>(fs * 2.0); // long enough for the makeup gain to settle
-    for (float density : { 0.25f, 0.5f, 0.75f, 1.0f }) {
-        for (float character : { 0.0f, 0.5f, 1.0f }) {
-            CAPTURE(density); CAPTURE(character);
-            Fonem f; f.prepare(fs); f.setParams({ density, 0, 0, 0, character });
-            auto y = x;
-            inBlocks(y, 512, [&](float** c, int k, int64_t) { f.process(c, 1, k); });
-            const int L = f.latencySamples();
-            CHECK(std::abs(rmsDb(y, skip + L) - rmsDb(x, skip)) < 2.0);
-            CHECK(peakDb(y) < peakDb(x) + 0.5);
-            CHECK(correlation(x, y, L) > 0.9);
+    for (double fs : { 44100.0, 48000.0, 96000.0 }) {
+        const auto x = loudPhrase(fs, 8.0);
+        const int skip = static_cast<int>(fs * 2.0); // long enough for the makeup gain to settle
+        for (float density : { 0.25f, 0.5f, 0.75f, 1.0f }) {
+            for (float character : { 0.0f, 0.5f, 1.0f }) {
+                CAPTURE(fs); CAPTURE(density); CAPTURE(character);
+                Fonem f; f.prepare(fs); f.setParams({ density, 0, 0, 0, character });
+                auto y = x;
+                inBlocks(y, 512, [&](float** c, int k, int64_t) { f.process(c, 1, k); });
+                const int L = f.latencySamples();
+                CHECK(std::abs(rmsDb(y, skip + L) - rmsDb(x, skip)) < 2.0);
+                CHECK(peakDb(y) < peakDb(x) + 0.5);
+                CHECK(correlation(x, y, L) > 0.9);
+            }
         }
     }
 }

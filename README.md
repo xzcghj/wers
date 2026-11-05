@@ -35,7 +35,7 @@ Moduły w dolnym pasku:
 ## Co warto wiedzieć
 
 - Ocena słów to szacunek oparty na modelu czytelności mowy ANSI S3.5, a nie pomiar na ludziach. Ufaj uszom, jeśli się z nią nie zgadzają.
-- Ocena widzi wokal i bit w miejscu, gdzie stoi wtyczka, czyli przed suwakiem śladu. Jeśli suwak wokalu stoi daleko od zera, wynik będzie mniej dokładny.
+- Wtyczka stoi przed suwakiem śladu, więc sama go nie słyszy. W REAPERze odczytuje suwak śladu i folderów nad nim, a oceny zmieniają się od razu, gdy nim poruszysz. W innych DAW-ach ocena zakłada suwaki wokalu i bitu w tej samej pozycji, więc po dużej różnicy między nimi będzie mniej dokładna.
 - Po zmianie wokalu wtyczka sama wyłącza naprawy i prosi o ponowne przesłuchanie.
 - Całe rozpoznawanie działa na Twoim komputerze. Nagrania nigdzie nie wychodzą.
 

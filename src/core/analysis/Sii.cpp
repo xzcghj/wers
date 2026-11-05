@@ -123,7 +123,7 @@ WordScore scoreWord(const BandFrames& f, int first, int last, Device d, const Sc
 
     // Which frames hold voice, and the average voice spectrum for vowels and consonants.
     std::array<double, kSiiBands> sumV{}, sumC{};
-    int nV = 0, nC = 0;
+    double nV = 0.0, nC = 0.0;
     float peak = -400.0f;
     const auto frameLevel = [&](int i) {
         const float* v = f.v18(i);
@@ -132,36 +132,36 @@ WordScore scoreWord(const BandFrames& f, int first, int last, Device d, const Sc
         return m;
     };
     for (int i = first; i < last; ++i) peak = std::max(peak, frameLevel(i));
-    const float presence = peak - 30.0f;
-    bool anyConsonant = false, anyVowel = false;
+    // A frame fades out of the word over 6 dB around 30 dB under its peak. A hard line here would let a
+    // tiny change in level move a whole word, because one weak consonant frame can decide its average.
+    const auto presence = [peak](float level) { return std::clamp((level - (peak - 33.0f)) / 6.0f, 0.0f, 1.0f); };
     for (int i = first; i < last; ++i) {
-        if (frameLevel(i) < presence) continue;
+        const float weight = presence(frameLevel(i));
+        if (weight <= 0.0f) continue;
         const bool cons = isConsonant(f.cls[static_cast<size_t>(i)]);
-        anyConsonant = anyConsonant || cons;
-        anyVowel = anyVowel || !cons;
         const float* v = f.v18(i);
         auto& target = cons ? sumC : sumV;
-        for (size_t k = 0; k < kSiiBands; ++k) target[k] += fromDb10(v[k]);
-        if (cons) ++nC; else ++nV;
+        for (size_t k = 0; k < kSiiBands; ++k) target[k] += weight * fromDb10(v[k]);
+        (cons ? nC : nV) += weight;
     }
-    if (nV + nC == 0) return out;
+    if (nV + nC <= 0.0) return out;
 
     std::array<float, kSiiBands> Ev{}, Ec{};
     for (size_t k = 0; k < kSiiBands; ++k) {
         const float base = dev.gainDb[k] + cal + mods.mix.vocalFaderDb;
-        if (nV > 0) Ev[k] = powerToDb(sumV[k] / nV, -200.0f) + base;
-        if (nC > 0) Ec[k] = powerToDb(sumC[k] / nC, -200.0f) + base;
+        if (nV > 0.0) Ev[k] = powerToDb(sumV[k] / nV, -200.0f) + base;
+        if (nC > 0.0) Ec[k] = powerToDb(sumC[k] / nC, -200.0f) + base;
         // A word without consonant frames gets its boost everywhere.
-        Ev[k] += nC == 0 ? boostDb[k] : 0.0f;
+        Ev[k] += nC <= 0.0 ? boostDb[k] : 0.0f;
         Ec[k] += boostDb[k];
     }
 
     std::array<float, kSiiBands> noise{}, a{}, sumA{};
-    double sV = 0.0, sC = 0.0;
-    int cV = 0, cC = 0, cA = 0;
+    double sV = 0.0, sC = 0.0, cV = 0.0, cC = 0.0, cA = 0.0;
     std::array<double, kSiiBands> beatSum{};
     for (int i = first; i < last; i += std::max(1, stride)) {
-        if (frameLevel(i) < presence) continue;
+        const float weight = presence(frameLevel(i));
+        if (weight <= 0.0f) continue;
         const float* b = f.b18(i);
         const bool cons = isConsonant(f.cls[static_cast<size_t>(i)]);
         // Live Miejsce and the word fix both act on the beat; the deeper of the two wins per band.
@@ -182,25 +182,28 @@ WordScore scoreWord(const BandFrames& f, int first, int last, Device d, const Sc
             const double beat = fromDb10(b[k] + dev.gainDb[k] + cal + mods.mix.beatFaderDb - cutDb[k]);
             const double amb = fromDb10(dev.noiseDb[k]);
             noise[k] = powerToDb(beat + amb, -200.0f);
-            beatSum[k] += beat / (beat + amb);
+            beatSum[k] += weight * beat / (beat + amb);
         }
-        const double s = siiFromLevels(cons && nC > 0 ? Ec.data() : Ev.data(), noise.data(), a.data());
-        if (cons && nC > 0) { sC += s; ++cC; } else { sV += s; ++cV; }
-        for (size_t k = 0; k < kSiiBands; ++k) sumA[k] += a[k];
-        ++cA;
+        const double s = siiFromLevels(cons && nC > 0.0 ? Ec.data() : Ev.data(), noise.data(), a.data());
+        if (cons && nC > 0.0) { sC += weight * s; cC += weight; } else { sV += weight * s; cV += weight; }
+        for (size_t k = 0; k < kSiiBands; ++k) sumA[k] += weight * a[k];
+        cA += weight;
     }
-    if (cA == 0) return out;
-    double sii;
-    if (cC > 0 && cV > 0) sii = 0.4 * sV / cV + 0.6 * sC / cC;
-    else if (cC > 0) sii = sC / cC;
-    else sii = sV / cV;
+    if (cA <= 0.0) return out;
+    // A word whose vowels or consonants are only a trace should lean on what it really has.
+    const double vowelShare = cV / cA, consonantShare = cC / cA;
+    const double consonantWeight = 0.6 * std::min(1.0, consonantShare * 8.0), vowelWeight = 0.4 * std::min(1.0, vowelShare * 8.0);
+    double sii = 0.0;
+    if (cC > 0.0) sii += consonantWeight * sC / cC;
+    if (cV > 0.0) sii += vowelWeight * sV / cV;
+    sii /= consonantWeight + vowelWeight;
     out.sii = sii;
     out.score = scoreFromSii(sii);
 
     // The band that loses the most importance-weighted audibility, within the range that matters.
     float worst = 0.02f;
     for (size_t k = 5; k < kSiiBands; ++k) {
-        const float loss = kImportance[k] * (1.0f - sumA[k] / static_cast<float>(cA));
+        const float loss = kImportance[k] * (1.0f - static_cast<float>(sumA[k] / cA));
         if (loss > worst) { worst = loss; out.worstBand = static_cast<int>(k); }
     }
     if (out.worstBand >= 0) {

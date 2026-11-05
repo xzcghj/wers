@@ -73,7 +73,7 @@ int main(int argc, char** argv) {
         return 2;
     }
     std::string model, lyricsFile, renderDir, dumpFile, rawDump, replay;
-    float depth = 0.0f; bool fixAll = false; bool dtw = true;
+    float depth = 0.0f; bool fixAll = false; bool dtw = true; bool roundTrip = false;
     float vocalGain = 1.0f;
     for (int i = 3; i < argc; ++i) {
         const std::string a = argv[i];
@@ -82,6 +82,7 @@ int main(int argc, char** argv) {
         else if (a == "--depth" && i + 1 < argc) depth = static_cast<float>(std::atof(argv[++i]));
         else if (a == "--vocal-gain-db" && i + 1 < argc) vocalGain = dbToGain(static_cast<float>(std::atof(argv[++i])));
         else if (a == "--fix-all") fixAll = true;
+        else if (a == "--round-trip") roundTrip = true;
         else if (a == "--no-dtw") dtw = false;
         else if (a == "--raw-dump" && i + 1 < argc) rawDump = argv[++i];
         else if (a == "--replay" && i + 1 < argc) replay = argv[++i];
@@ -146,6 +147,32 @@ int main(int argc, char** argv) {
         }
     for (int d = 0; d < kNumDevices; ++d)
         std::cout << deviceName(d) << ": dies " << counts[static_cast<size_t>(d)][0] << ", fades " << counts[static_cast<size_t>(d)][1] << ", clear " << counts[static_cast<size_t>(d)][2] << "\n";
+
+    if (roundTrip) {
+        // Saves, opens and scores again, the way a host does when a project is opened.
+        session.setFaders(0.3f, 0.0f);
+        session.waitIdle();
+        const auto saved = session.result();
+        const auto blob = session.save();
+        SongSession opened;
+        if (!opened.load(blob.data(), blob.size())) { std::cerr << "round trip: load failed\n"; return 1; }
+        opened.setPlaceDepth(depth);
+        opened.setFaders(0.3f, 0.0f);
+        opened.waitIdle();
+        const auto again = opened.result();
+        double sum = 0.0, bias = 0.0, worst = 0.0;
+        int crossed = 0, n = 0;
+        const auto cls = [](float x) { return x < kScoreDies ? 0 : (x < kScoreFades ? 1 : 2); };
+        for (size_t w = 0; w < saved->words.size(); ++w)
+            for (size_t d = 0; d < kNumDevices; ++d) {
+                const float a = saved->words[w].verdict[d].score, b = again->words[w].verdict[d].score;
+                sum += std::abs(a - b); bias += b - a; worst = std::max<double>(worst, std::abs(a - b));
+                crossed += cls(a) != cls(b) ? 1 : 0;
+                if (std::abs(a - b) > 1.0f) std::cout << "  moved " << saved->words[w].text << " device " << d << ": " << a << " -> " << b << "\n";
+                ++n;
+            }
+        std::cout << "round trip: " << blob.size() / 1024 << " kB, score change mean " << sum / n << ", bias " << bias / n << ", worst " << worst << ", crossed a threshold " << crossed << " of " << n << "\n";
+    }
 
     if (!dumpFile.empty()) {
         std::ofstream o(dumpFile);

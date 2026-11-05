@@ -440,6 +440,44 @@ TEST_CASE("session: state round trip keeps words, fixes and the ability to fix m
     t.attachLink(nullptr, -1);
 }
 
+TEST_CASE("session: scores do not move when a saved project is opened again") {
+    Rig r;
+    std::vector<uint8_t> blob;
+    std::vector<float> before;
+    {
+        SongSession s;
+        s.attachLink(&r.group, r.slot);
+        s.setStores(r.vs, nullptr);
+        s.setLyrics("wstaje gdy miasto spi");
+        r.play(s, 5.0, -24, -12);
+        s.waitIdle();
+        s.setFaders(-3.0f, 0.0f);
+        s.waitIdle();
+        for (const auto& w : s.result()->words) for (const auto& v : w.verdict) before.push_back(v.score);
+        blob = s.save();
+        s.attachLink(nullptr, -1);
+    }
+    SongSession t;
+    t.attachLink(&r.group, r.slot);
+    REQUIRE(t.load(blob.data(), blob.size()));
+    t.setFaders(-3.0f, 0.0f); // the host reports its faders right after opening, and everything is scored again
+    t.waitIdle();
+    size_t i = 0;
+    double sum = 0.0;
+    double bias = 0.0;
+    for (const auto& w : t.result()->words)
+        for (const auto& v : w.verdict) {
+            const double difference = static_cast<double>(v.score) - static_cast<double>(before[i++]);
+            sum += std::abs(difference);
+            bias += difference;
+            CHECK(std::abs(difference) < 1.0);
+        }
+    REQUIRE(i == before.size());
+    CHECK(sum / static_cast<double>(i) < 0.25);
+    CHECK(std::abs(bias) / static_cast<double>(i) < 0.1);
+    t.attachLink(nullptr, -1);
+}
+
 TEST_CASE("session: damaged state is refused and leaves the session usable") {
     Rig r;
     std::vector<uint8_t> blob;
