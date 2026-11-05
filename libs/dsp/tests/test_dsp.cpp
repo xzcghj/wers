@@ -234,6 +234,28 @@ TEST_CASE("level match corrects a steady difference") {
     CHECK(settle(1.0f) == 1.0f);
 }
 
+TEST_CASE("level match hears both channels") {
+    const double fs = 48000.0;
+    const auto x = noise(-20.0, static_cast<int>(fs * 2.0));
+    LevelMatch stereo, mono;
+    stereo.prepare(fs);
+    mono.prepare(fs);
+    float both = 1.0f, single = 1.0f;
+    for (float v : x) {
+        // Opposite channels have nothing in their sum, and what differs is still only 6 dB.
+        both = stereo.push(v, -v, 0.5f * v, -0.5f * v);
+        single = mono.push(v, 0.5f * v);
+    }
+    CHECK(std::abs(gainToDb(both) - 6.02) < 0.3);
+    CHECK(both == single);
+    // One channel silent: the other one still counts.
+    LevelMatch oneSide;
+    oneSide.prepare(fs);
+    float side = 1.0f;
+    for (float v : x) side = oneSide.push(v, 0.0f, 0.5f * v, 0.0f);
+    CHECK(std::abs(gainToDb(side) - 6.02) < 0.3);
+}
+
 TEST_CASE("level match holds in silence") {
     const double fs = 48000.0;
     LevelMatch match;

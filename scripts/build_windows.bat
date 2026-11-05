@@ -34,15 +34,15 @@ if not errorlevel 1 (
     cmake --version > "%LOGS%\tools.log" 2>&1
     git --version >> "%LOGS%\tools.log" 2>&1
     powershell -NoProfile -Command "Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors | Format-List; 'RAM GB: ' + [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB)" >> "%LOGS%\tools.log" 2>&1
-    echo configure %TIME%>> "%STATUS%"
+    echo configure !TIME!>> "%STATUS%"
     echo   Konfiguracja, pobieranie JUCE i whisper.cpp...
     cmake -S "%ROOT%\src-tree" -B "%BUILD%" -G "Visual Studio 17 2022" -A x64 -DWERS_BUILD_TESTS=ON -DWERS_WITH_WHISPER=ON -DWERS_BUILD_PROBE=ON > "%LOGS%\configure.log" 2>&1
     if errorlevel 1 ( echo FAILED configure>> "%STATUS%" & goto end )
-    echo build %TIME%>> "%STATUS%"
+    echo build !TIME!>> "%STATUS%"
     echo   Kompilacja...
     cmake --build "%BUILD%" --config Release --parallel --target wers_tests wers_dsp_tests wers_plugin_tests wers_ui_shots wers_cli wers_whisper WERS_VST3 WersProbe_VST3 barwa_tests barwa_plugin_tests barwa_ui_shots barwa_measure WersBarwa_VST3 -- /m /nologo /v:m > "%LOGS%\build.log" 2>&1
     if errorlevel 1 ( echo FAILED build>> "%STATUS%" & goto end )
-    echo PASSED build %TIME%>> "%STATUS%"
+    echo PASSED build !TIME!>> "%STATUS%"
     if exist "%ROOT%\WERS.vst3" rmdir /s /q "%ROOT%\WERS.vst3"
     xcopy /e /i /q /y "%VST%" "%ROOT%\WERS.vst3" >> "%LOGS%\tools.log" 2>&1
     if exist "%ROOT%\WERS Barwa.vst3" rmdir /s /q "%ROOT%\WERS Barwa.vst3"
@@ -51,7 +51,7 @@ if not errorlevel 1 (
 
 echo %JOB% | findstr /c:"tests" >nul
 if not errorlevel 1 (
-    echo tests %TIME%>> "%STATUS%"
+    echo tests !TIME!>> "%STATUS%"
     echo   Testy...
     "%BUILD%\plugins\wers\tests\Release\wers_tests.exe" > "%LOGS%\tests.log" 2>&1
     if errorlevel 1 ( echo FAILED core tests>> "%STATUS%" ) else ( echo PASSED core tests>> "%STATUS%" )
@@ -82,7 +82,7 @@ if not errorlevel 1 (
         tar -xf "%ROOT%\tools\pluginval.zip" -C "%ROOT%\tools" >> "%LOGS%\tools.log" 2>&1
     )
     if exist "%ROOT%\tools\pluginval.exe" (
-        echo pluginval %TIME%>> "%STATUS%"
+        echo pluginval !TIME!>> "%STATUS%"
         echo   pluginval...
         "%ROOT%\tools\pluginval.exe" --validate-in-process --strictness-level 10 --timeout-ms 600000 "%VST%" > "%LOGS%\pluginval.log" 2>&1
         if errorlevel 1 ( echo FAILED pluginval>> "%STATUS%" ) else ( echo PASSED pluginval>> "%STATUS%" )
@@ -96,15 +96,15 @@ if not errorlevel 1 (
 echo %JOB% | findstr /c:"measure" >nul
 if not errorlevel 1 (
     rem Measures on the songs named in measure_list.txt. Only numbers are written.
-    echo measure %TIME%>> "%STATUS%"
+    echo measure !TIME!>> "%STATUS%"
     echo   Pomiary Barwy na numerach...
     "%BUILD%\plugins\barwa\Release\barwa_measure.exe" --list "%ROOT%\measure_list.txt" --out "%LOGS%\measure.tsv" > "%LOGS%\measure.log" 2>&1
-    if errorlevel 1 ( echo FAILED measure>> "%STATUS%" ) else ( echo PASSED measure %TIME%>> "%STATUS%" )
+    if errorlevel 1 ( echo FAILED measure>> "%STATUS%" ) else ( echo PASSED measure !TIME!>> "%STATUS%" )
 )
 
 echo %JOB% | findstr /c:"cpu" >nul
 if not errorlevel 1 (
-    echo cpu %TIME%>> "%STATUS%"
+    echo cpu !TIME!>> "%STATUS%"
     echo   Pomiar obciazenia procesora...
     "%BUILD%\plugins\barwa\Release\barwa_measure.exe" --cpu > "%LOGS%\cpu.log" 2>&1
     if errorlevel 1 ( echo FAILED cpu>> "%STATUS%" ) else ( echo PASSED cpu>> "%STATUS%" )
@@ -122,9 +122,9 @@ if not errorlevel 1 (
 echo %JOB% | findstr /c:"nettest" >nul
 if not errorlevel 1 (
     rem The plugin's own download code against the real address. Downloads 547 MB to the temporary folder.
-    echo nettest %TIME%>> "%STATUS%"
+    echo nettest !TIME!>> "%STATUS%"
     "%BUILD%\plugins\wers\plugin\Release\wers_plugin_tests.exe" -ns -tc="the model downloads*" > "%LOGS%\nettest.log" 2>&1
-    if errorlevel 1 ( echo FAILED nettest>> "%STATUS%" ) else ( echo PASSED nettest %TIME%>> "%STATUS%" )
+    if errorlevel 1 ( echo FAILED nettest>> "%STATUS%" ) else ( echo PASSED nettest !TIME!>> "%STATUS%" )
 )
 
 echo %JOB% | findstr /c:"turbo" >nul
@@ -172,7 +172,7 @@ rem A speech model from the official whisper.cpp repository, then a transcriptio
 set "MODELS=%APPDATA%\WERS\models"
 if not exist "%MODELS%" mkdir "%MODELS%"
 if not exist "%MODELS%\%~1.bin" (
-    echo download %~1 %TIME%>> "%STATUS%"
+    echo download %~1 !TIME!>> "%STATUS%"
     echo   Pobieranie modelu mowy %~1...
     curl -L -f -o "%MODELS%\%~1.part" https://huggingface.co/ggerganov/whisper.cpp/resolve/main/%~1.bin >> "%LOGS%\tools.log" 2>&1
     if not errorlevel 1 move /y "%MODELS%\%~1.part" "%MODELS%\%~1.bin" >nul

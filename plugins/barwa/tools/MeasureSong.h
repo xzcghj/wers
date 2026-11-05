@@ -10,6 +10,7 @@ struct SongResult {
     double seconds = 0.0;
     int sibFrames = 0, vowelFrames = 0;
     double sibDropDb = 0.0, vowelDropDb = 0.0; // how much less is added with the mask than without it
+    double sibLevelDb = 0.0, vowelLevelDb = 0.0; // what is heard in those frames, against the input
     double levelDiffDb = 0.0, peakDiffDb = 0.0; // with the mask and Auto level, against the input
 };
 

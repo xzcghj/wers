@@ -5,10 +5,12 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 
 namespace {
 constexpr double kCpuSeconds = 30.0, kCpuLimitPercent = 5.0;
-std::u8string asPath(const char* text) { return std::u8string(reinterpret_cast<const char8_t*>(text)); }
+// Program arguments come in the code page of the system, which this turns into UTF-8.
+std::u8string asPath(const char* text) { return std::filesystem::path(text).u8string(); }
 }
 
 int main(int argc, char** argv) {

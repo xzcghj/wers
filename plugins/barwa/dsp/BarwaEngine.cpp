@@ -62,12 +62,14 @@ bool BarwaEngine::Gate::advance(bool changeWanted, float step, int settleTicks) 
                 level = 0.0f;
                 wait = settleTicks;
                 phase = Phase::Settling;
-                return true;
             }
             break;
-        case Phase::Settling:
+        case Phase::Settling: {
+            // The fade reaches zero one control step after the level does, so this is when nothing is heard.
+            const bool closedJustNow = wait == settleTicks;
             if (--wait <= 0) phase = Phase::Opening;
-            break;
+            return closedJustNow;
+        }
         case Phase::Opening:
             if (changeWanted) {
                 phase = Phase::Closing;
@@ -304,13 +306,14 @@ void BarwaEngine::process(float* const* channels, int numChannels, int numSample
             extra[c] = mixRamp_.now * maskRamp_.now * static_cast<float>(channel.tilt.tick(channel.dc.tick(static_cast<double>(added))));
         }
 
-        // A soloed band says nothing about the level of the whole, so the gain holds while soloing.
+        // Make-up is earned and spent where the colour goes. What the mask keeps clean stays at its own level,
+        // and it does not count towards the gain. A soloed band says nothing about the whole, so the gain holds.
+        const float colour = maskRamp_.now;
         if (!anySolo_) {
-            const float dryMono = count == 2 ? 0.5f * (dry[0] + dry[1]) : dry[0];
-            const float extraMono = count == 2 ? 0.5f * (extra[0] + extra[1]) : extra[0];
-            matchGain_ = levelMatch_.push(dryMono, dryMono + extraMono);
+            matchGain_ = count == 2 ? levelMatch_.push(colour * dry[0], colour * dry[1], colour * (dry[0] + extra[0]), colour * (dry[1] + extra[1]))
+                                    : levelMatch_.push(colour * dry[0], colour * (dry[0] + extra[0]));
         }
-        const float gain = (1.0f + autoRamp_.now * (matchGain_ - 1.0f)) * outputRamp_.now * bandCountRamp_.now;
+        const float gain = (1.0f + autoRamp_.now * colour * (matchGain_ - 1.0f)) * outputRamp_.now * bandCountRamp_.now;
         for (size_t c = 0; c < static_cast<size_t>(count); ++c)
             channels[c][i] = (dryRamp_.now * dry[c] + extra[c]) * gain;
 

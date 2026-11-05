@@ -11,6 +11,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <limits>
 #include <new>
 #include <random>
@@ -187,23 +188,26 @@ TEST_CASE("auto level holds loudness") {
     const auto x = loudPhrase(kFs, 6.0, -1.0);
     const int from = static_cast<int>(kFs * 2.0), to = static_cast<int>(x.size());
     const double inLevel = rmsDb(x, from, to), inWeighted = weightedDb(x, from, to), inPeak = peakDb(x, from, to);
-    for (Character character : kCharacters) {
-        for (float drive : { 0.0f, 6.0f, 12.0f, 18.0f, 24.0f }) {
-            CAPTURE(static_cast<int>(character)); CAPTURE(drive);
-            auto p = plain(drive);
-            p.autoLevel = true;
-            p.band[0].character = character;
-            BarwaEngine engine;
-            engine.prepare(kFs, 2);
-            engine.setParams(p);
-            const auto y = runThrough(engine, x);
-            const int late = engine.latencySamples();
-            const double level = rmsDb(y, from + late, to) - inLevel;
-            const double weighted = weightedDb(y, from + late, to) - inWeighted;
-            const double peak = peakDb(y, from + late, to) - inPeak;
-            MESSAGE("character " << static_cast<int>(character) << " drive " << drive << ": rms " << level << " dB, weighted " << weighted << " dB, peak " << peak << " dB");
-            CHECK(std::abs(weighted) <= 1.0);
-            CHECK(peak <= 1.0);
+    for (float mask : { 0.0f, 1.0f }) {
+        for (Character character : kCharacters) {
+            for (float drive : { 0.0f, 6.0f, 12.0f, 18.0f, 24.0f }) {
+                CAPTURE(mask); CAPTURE(static_cast<int>(character)); CAPTURE(drive);
+                auto p = plain(drive);
+                p.autoLevel = true;
+                p.mask = mask;
+                p.band[0].character = character;
+                BarwaEngine engine;
+                engine.prepare(kFs, 2);
+                engine.setParams(p);
+                const auto y = runThrough(engine, x);
+                const int late = engine.latencySamples();
+                const double level = rmsDb(y, from + late, to) - inLevel;
+                const double weighted = weightedDb(y, from + late, to) - inWeighted;
+                const double peak = peakDb(y, from + late, to) - inPeak;
+                MESSAGE("mask " << mask << " character " << static_cast<int>(character) << " drive " << drive << ": rms " << level << " dB, weighted " << weighted << " dB, peak " << peak << " dB");
+                CHECK(std::abs(weighted) <= 1.0);
+                CHECK(peak <= 1.0);
+            }
         }
     }
 }
@@ -216,11 +220,11 @@ struct Syllables {
     std::vector<std::pair<int, int>> vowels, sibilants;
 };
 
-Syllables makeSyllables(double fs, int rounds) {
+Syllables makeSyllables(double fs, int rounds, double vowelDb = -18.0, double sibilantDb = -26.0) {
     Syllables s;
     const int vowelLength = static_cast<int>(fs * 0.4), sibilantLength = static_cast<int>(fs * 0.2);
-    const auto v = vowel(150.0, -18.0, vowelLength, fs);
-    const auto n = bandNoise(4000.0, 9000.0, -26.0, sibilantLength, fs);
+    const auto v = vowel(150.0, vowelDb, vowelLength, fs);
+    const auto n = bandNoise(4000.0, 9000.0, sibilantDb, sibilantLength, fs);
     for (int i = 0; i < rounds; ++i) {
         const int start = static_cast<int>(s.signal.size());
         append(s.signal, v);
@@ -260,6 +264,87 @@ TEST_CASE("mask spares sibilants") {
         MESSAGE("character " << static_cast<int>(character) << ": sibilants down " << sibilantDrop << " dB, vowels down " << vowelDrop << " dB");
         CHECK(sibilantDrop >= 12.0);
         CHECK(vowelDrop <= 1.0);
+    }
+}
+
+TEST_CASE("auto level leaves sibilants where they were") {
+    // The gain that makes up for squashed vowels must not lift what the mask keeps clean.
+    const int skip = static_cast<int>(kFs * 0.03), settled = 4;
+    const auto zoneLevel = [&](const std::vector<float>& y, const std::vector<std::pair<int, int>>& zones, int late) {
+        double energy = 0.0;
+        int count = 0;
+        for (size_t k = settled; k < zones.size(); ++k) {
+            for (int i = zones[k].first + skip + late; i < std::min(zones[k].second + late, static_cast<int>(y.size())); ++i) {
+                energy += static_cast<double>(y[static_cast<size_t>(i)]) * y[static_cast<size_t>(i)];
+                ++count;
+            }
+        }
+        return 10.0 * std::log10(energy / std::max(1, count) + 1e-30);
+    };
+    for (double vowelDb : { -12.0, -6.0 }) {
+        for (float drive : { 12.0f, 18.0f }) {
+            CAPTURE(vowelDb); CAPTURE(drive);
+            const auto s = makeSyllables(kFs, 10, vowelDb, vowelDb - 14.0);
+            auto p = plain(drive);
+            p.mask = 1.0f;
+            p.autoLevel = true;
+            BarwaEngine engine;
+            engine.prepare(kFs, 2);
+            engine.setParams(p);
+            const auto y = runThrough(engine, s.signal);
+            const int late = engine.latencySamples();
+            const double sibilant = zoneLevel(y, s.sibilants, late) - zoneLevel(s.signal, s.sibilants, 0);
+            const double vowels = zoneLevel(y, s.vowels, late) - zoneLevel(s.signal, s.vowels, 0);
+            MESSAGE("vowel " << vowelDb << " dB, drive " << drive << ": sibilants " << sibilant << " dB, vowels " << vowels << " dB");
+            CHECK(std::abs(sibilant) <= 1.0);
+            CHECK(std::abs(vowels) <= 1.5);
+        }
+    }
+}
+
+TEST_CASE("auto level hears both channels") {
+    // Sound that is mostly opposite in the two channels has almost nothing in their sum.
+    const auto phrase = loudPhrase(kFs, 5.0, -3.0);
+    const int from = static_cast<int>(kFs * 2.0), n = static_cast<int>(phrase.size());
+    for (Character character : kCharacters) {
+        CAPTURE(static_cast<int>(character));
+        auto p = plain(12.0f);
+        p.autoLevel = true;
+        p.band[0].character = character;
+        BarwaEngine engine;
+        engine.prepare(kFs, 2);
+        engine.setParams(p);
+        auto left = phrase, right = phrase;
+        for (auto& v : right) v = -v;
+        for (int block = 0; block < n; block += 256) {
+            float* channels[] = { left.data() + block, right.data() + block };
+            engine.process(channels, 2, std::min(256, n - block));
+        }
+        const int late = engine.latencySamples();
+        const double change = weightedDb(left, from + late, n) - weightedDb(phrase, from, n);
+        MESSAGE("character " << static_cast<int>(character) << ": left channel " << change << " dB");
+        CHECK(std::abs(change) <= 1.0);
+    }
+}
+
+TEST_CASE("a hot phrase keeps its edges") {
+    // Focus 1. Tracks of the user reached +5.9 dBFS. With a voice on them, no sample may jump beyond what the input does.
+    const auto phrase = loudPhrase(kFs, 6.0, 5.9);
+    const int from = static_cast<int>(kFs * 2.0), n = static_cast<int>(phrase.size());
+    const double inputJump = worstJump(phrase, from, n);
+    for (Character character : kCharacters) {
+        for (float drive : { 12.0f, 24.0f }) {
+            CAPTURE(static_cast<int>(character)); CAPTURE(drive);
+            auto p = plain(drive);
+            p.mask = 1.0f;
+            p.autoLevel = true;
+            p.band[0].character = character;
+            const auto y = run(phrase, p);
+            for (float v : y) REQUIRE(std::isfinite(v));
+            const double jump = worstJump(y, from, n);
+            MESSAGE("character " << static_cast<int>(character) << " drive " << drive << ": worst step " << jump << ", input " << inputJump);
+            CHECK(jump <= 2.0 * inputJump);
+        }
     }
 }
 
@@ -336,14 +421,34 @@ TEST_CASE("hot input stays finite") {
 }
 
 TEST_CASE("mask on a beat does not click or pump") {
-    const int beatEvery = static_cast<int>(kFs * 0.25), hit = 480;
-    for (double level : { -20.0, -12.0 }) {
-        const int n = static_cast<int>(kFs * 6.0);
-        auto beat = bandNoise(200.0, 8000.0, level, n, kFs);
+    // Focus 2. A beat with kick, 808, snare and hats, on which the mask really opens and shuts.
+    const auto makeBeat = [](double seconds, double peak) {
+        const int n = static_cast<int>(kFs * seconds), beatLength = static_cast<int>(kFs * 0.5);
+        std::vector<float> x(static_cast<size_t>(n), 0.0f);
+        Lcg random(77);
+        Svf hatFilter, snareFilter;
+        hatFilter.set(7000.0, 0.7, kFs);
+        snareFilter.set(1800.0, 0.8, kFs);
         for (int i = 0; i < n; ++i) {
-            const int since = i % beatEvery;
-            if (since < hit) beat[static_cast<size_t>(i)] += 0.5f * std::exp(-static_cast<float>(since) / 60.0f) * (since % 2 == 0 ? 1.0f : -1.0f);
+            const int inBeat = i % beatLength, beatIndex = i / beatLength;
+            const double t = inBeat / kFs, hatTime = (i % (beatLength / 2)) / kFs;
+            const double hiss = static_cast<double>(random.next());
+            double v = 0.9 * std::exp(-t * 18.0) * std::sin(2.0 * kPi * (50.0 * t + 8.0 * (1.0 - std::exp(-t * 40.0))));
+            if (beatIndex % 2 == 0) v += 0.5 * std::exp(-t * 3.0) * std::sin(2.0 * kPi * 45.0 * t);
+            const double band = snareFilter.tick(hiss).bp;
+            if (beatIndex % 2 == 1) v += 0.6 * std::exp(-t * 25.0) * (0.5 * std::sin(2.0 * kPi * 190.0 * t) + 2.0 * band);
+            v += 0.25 * std::exp(-hatTime * 60.0) * hatFilter.tick(hiss).hp;
+            x[static_cast<size_t>(i)] = static_cast<float>(v);
         }
+        float highest = 1e-9f;
+        for (float v : x) highest = std::max(highest, std::abs(v));
+        const float gain = static_cast<float>(dbToGainD(peak)) / highest;
+        for (auto& v : x) v *= gain;
+        return x;
+    };
+    for (double peak : { 0.0, 5.9 }) {
+        const auto beat = makeBeat(8.0, peak);
+        const int n = static_cast<int>(beat.size()), from = static_cast<int>(kFs * 2.0);
         auto p = plain(12.0f);
         p.autoLevel = true;
         const auto open = run(beat, p);
@@ -351,27 +456,43 @@ TEST_CASE("mask on a beat does not click or pump") {
         BarwaEngine engine;
         engine.prepare(kFs, 2);
         engine.setParams(p);
-        const auto masked = runThrough(engine, beat);
-        const int late = engine.latencySamples();
-        const int from = static_cast<int>(kFs * 2.0);
-
-        // A hit that gets less colour keeps the edge it has at the input. That is not a click.
-        const double hitLimit = 2.0 * std::max(worstJump(open, from, n), worstJump(beat, from, n));
-        const double hitJump = worstJump(masked, from, n);
-        // Between the hits there is only noise, where anything the mask does would stand out.
-        double openJump = 0.0, maskedJump = 0.0;
-        const int gap = static_cast<int>(kFs * 0.02);
-        for (int start = from - from % beatEvery + late + hit + gap; start + beatEvery - hit - gap < n; start += beatEvery) {
-            openJump = std::max(openJump, worstJump(open, start, start + beatEvery - hit - gap));
-            maskedJump = std::max(maskedJump, worstJump(masked, start, start + beatEvery - hit - gap));
+        std::vector<float> masked = beat;
+        float lowestMask = 1.0f, highestMask = 0.0f;
+        for (int block = 0; block < n; block += 64) {
+            float* channels[] = { masked.data() + block };
+            engine.process(channels, 1, std::min(64, n - block));
+            if (block >= from) {
+                lowestMask = std::min(lowestMask, engine.maskNow());
+                highestMask = std::max(highestMask, engine.maskNow());
+            }
         }
-        double worstLevel = 0.0;
+        // Without this the test would prove nothing: the mask has to be doing something on this beat.
+        CHECK(lowestMask < 0.2f);
+        CHECK(highestMask > 0.8f);
+
+        const int late = engine.latencySamples();
+        const double jump = worstJump(masked, from, n);
+        const double allowed = 2.0 * std::max(worstJump(open, from, n), worstJump(beat, from, n));
+        // Saturation with make-up gain lifts what lies between hits by itself, mask or no mask. The mask may
+        // not move the level further from the input than that, in 100 ms windows.
+        double lowest = 0.0, highest = 0.0, openLowest = 0.0, openHighest = 0.0;
         const int window = static_cast<int>(kFs * 0.1);
-        for (int w = from; w + window < n; w += window) worstLevel = std::max(worstLevel, std::abs(rmsDb(masked, w, w + window) - rmsDb(open, w, w + window)));
-        MESSAGE("beat at " << level << " dB: on hits " << hitJump << " of " << hitLimit << ", between hits " << maskedJump << " against " << openJump << ", level moves " << worstLevel << " dB");
-        CHECK(hitJump <= hitLimit);
-        CHECK(maskedJump <= 2.0 * openJump);
-        CHECK(worstLevel <= 1.0);
+        for (int w = from; w + window + late < n; w += window) {
+            const double input = rmsDb(beat, w, w + window);
+            const double change = rmsDb(masked, w + late, w + late + window) - input;
+            const double openChange = rmsDb(open, w + late, w + late + window) - input;
+            lowest = std::min(lowest, change);
+            highest = std::max(highest, change);
+            openLowest = std::min(openLowest, openChange);
+            openHighest = std::max(openHighest, openChange);
+        }
+        const double peakChange = peakDb(masked, from + late, n) - peakDb(beat, from, n - late);
+        MESSAGE("beat peak " << peak << " dB: mask " << lowestMask << " to " << highestMask << ", worst step " << jump << " of " << allowed << ", level " << lowest << " to " << highest
+                             << " dB, without the mask " << openLowest << " to " << openHighest << " dB, peak " << peakChange << " dB");
+        CHECK(jump <= allowed);
+        CHECK(lowest >= openLowest - 1.0);
+        CHECK(highest <= openHighest + 1.0);
+        CHECK(peakChange <= 1.0);
     }
 }
 
@@ -419,6 +540,44 @@ TEST_CASE("controls do not click") {
         const double jump = worstJump(y, half - 256, half * 2);
         MESSAGE(doctest::String(change.name) << ": jump " << jump << ", allowed " << allowed);
         CHECK(jump <= allowed);
+    }
+}
+
+TEST_CASE("changing the band count does not click on a low tone") {
+    const int half = static_cast<int>(kFs * 0.5);
+    const auto x = sine(100.0, -6.0, half * 2, kFs);
+    const auto settings = [](float drive, int bands, Character character) {
+        auto p = plain(drive, bands);
+        p.f1 = 60.0f;
+        for (auto& b : p.band) b.character = character;
+        return p;
+    };
+    struct Change { const char* name; int fromBands, toBands; Character fromCharacter, toCharacter; };
+    const std::array<Change, 6> changes{ { { "three to one", 3, 1, Character::Lamp, Character::Lamp },
+                                           { "two to one", 2, 1, Character::Lamp, Character::Lamp },
+                                           { "one to three", 1, 3, Character::Lamp, Character::Lamp },
+                                           { "three to two", 3, 2, Character::Lamp, Character::Lamp },
+                                           { "character to shelves", 1, 1, Character::Lamp, Character::Transformer },
+                                           { "shelves to character", 1, 1, Character::Transformer, Character::Lamp } } };
+    for (float drive : { 0.0f, 12.0f, 24.0f }) {
+        for (const auto& change : changes) {
+            CAPTURE(doctest::String(change.name)); CAPTURE(drive);
+            const auto before = settings(drive, change.fromBands, change.fromCharacter);
+            const auto after = settings(drive, change.toBands, change.toCharacter);
+            BarwaEngine engine;
+            engine.prepare(kFs, 2);
+            engine.setParams(before);
+            std::vector<float> y = x;
+            for (int from = 0; from < half * 2; from += 256) {
+                if (from >= half && from < half + 256) engine.setParams(after);
+                float* channels[] = { y.data() + from };
+                engine.process(channels, 1, std::min(256, half * 2 - from));
+            }
+            const double allowed = 2.0 * std::max(worstJump(run(x, before), half / 2, half * 2), worstJump(run(x, after), half / 2, half * 2));
+            const double jump = worstJump(y, half - 256, half * 2);
+            MESSAGE(doctest::String(change.name) << " at drive " << drive << ": jump " << jump << ", allowed " << allowed);
+            CHECK(jump <= allowed);
+        }
     }
 }
 
@@ -553,6 +712,8 @@ TEST_CASE("measuring a song finds what the mask does") {
     CHECK(result.vowelFrames >= 100);
     CHECK(result.sibDropDb >= 12.0);
     CHECK(result.vowelDropDb <= 1.0);
+    CHECK(std::abs(result.sibLevelDb) <= 1.0);
+    CHECK(std::abs(result.vowelLevelDb) <= 1.0);
     CHECK(std::abs(result.levelDiffDb) <= 1.0);
     CHECK(result.peakDiffDb <= 1.0);
 }
@@ -581,20 +742,22 @@ TEST_CASE("the measurement file holds only numbers") {
         const auto bytes = first.u8string();
         file << "\xEF\xBB\xBF" << std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size()) << "\r\n";
         file << (folder / "nie ma takiego pliku.wav").string() << "\n\n";
+        file << "\xFF\xFE to nie jest tekst.wav\n";
     }
     REQUIRE(measureList(list.u8string(), out.u8string()) == 1);
     std::ifstream result(out, std::ios::binary);
     std::string text((std::istreambuf_iterator<char>(result)), std::istreambuf_iterator<char>());
     CAPTURE(text);
-    CHECK(text.rfind("index\tseconds\tsibFrames\tvowelFrames\tsibDropDb\tvowelDropDb\tlevelDiffDb\tpeakDiffDb\n", 0) == 0);
+    CHECK(text.rfind("index\tseconds\tsibFrames\tvowelFrames\tsibDropDb\tvowelDropDb\tsibLevelDb\tvowelLevelDb\tlevelDiffDb\tpeakDiffDb\n", 0) == 0);
     CHECK(text.find("sekretny") == std::string::npos);
     CHECK(text.find("wav") == std::string::npos);
     CHECK(text.find(":") == std::string::npos);
     CHECK(text.find("/") == std::string::npos);
     CHECK(text.find("\\") == std::string::npos);
     // One row a file in the list: a file that could not be read says so with zero seconds.
-    CHECK(std::count(text.begin(), text.end(), '\n') == 3);
+    CHECK(std::count(text.begin(), text.end(), '\n') == 4);
     CHECK(text.find("\n2\t0.0") != std::string::npos);
+    CHECK(text.find("\n3\t0.0") != std::string::npos);
     fs::remove_all(folder);
 }
 

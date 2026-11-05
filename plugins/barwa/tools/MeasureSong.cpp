@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 
 namespace barwa {
 
@@ -91,6 +92,7 @@ SongResult measureSong(const std::vector<float>& mono, double fs) {
     }
 
     double sibOpen = 0.0, sibMasked = 0.0, vowelOpen = 0.0, vowelMasked = 0.0;
+    double sibInput = 0.0, sibOutput = 0.0, vowelInput = 0.0, vowelOutput = 0.0;
     const auto energyIn = [&](const std::vector<float>& y, size_t f) {
         const size_t start = f * static_cast<size_t>(frame) + static_cast<size_t>(latency);
         const size_t end = std::min(y.size(), start + static_cast<size_t>(frame));
@@ -103,14 +105,20 @@ SongResult measureSong(const std::vector<float>& mono, double fs) {
             ++result.sibFrames;
             sibOpen += energyIn(open, f);
             sibMasked += energyIn(masked, f);
+            sibInput += allEnergy[f];
+            sibOutput += energyIn(output, f);
         } else if (lowEnergy[f] >= highEnergy[f] * fromDb(kVowelOverHighDb) && allEnergy[f] >= loudest * fromDb(-kVowelRangeDb)) {
             ++result.vowelFrames;
             vowelOpen += energyIn(open, f);
             vowelMasked += energyIn(masked, f);
+            vowelInput += allEnergy[f];
+            vowelOutput += energyIn(output, f);
         }
     }
     result.sibDropDb = toDb(sibOpen) - toDb(sibMasked);
     result.vowelDropDb = toDb(vowelOpen) - toDb(vowelMasked);
+    result.sibLevelDb = toDb(sibOutput) - toDb(sibInput);
+    result.vowelLevelDb = toDb(vowelOutput) - toDb(vowelInput);
 
     const size_t settle = std::min(mono.size() / 2, static_cast<size_t>(fs * kSettleSeconds));
     const size_t inputEnd = mono.size() - std::min(mono.size(), static_cast<size_t>(latency));
@@ -124,7 +132,7 @@ int measureList(const std::u8string& listPath, const std::u8string& outPath) {
     std::ifstream list(fs::path(listPath), std::ios::binary);
     std::ofstream out(fs::path(outPath), std::ios::binary);
     if (!list || !out) return 0;
-    out << "index\tseconds\tsibFrames\tvowelFrames\tsibDropDb\tvowelDropDb\tlevelDiffDb\tpeakDiffDb\n";
+    out << "index\tseconds\tsibFrames\tvowelFrames\tsibDropDb\tvowelDropDb\tsibLevelDb\tvowelLevelDb\tlevelDiffDb\tpeakDiffDb\n";
     int index = 0, measured = 0;
     std::string line;
     while (std::getline(list, line)) {
@@ -133,24 +141,29 @@ int measureList(const std::u8string& listPath, const std::u8string& outPath) {
         if (line.empty()) continue;
         ++index;
         SongResult result;
-        std::ifstream file(fs::path(std::u8string(reinterpret_cast<const char8_t*>(line.data()), line.size())), std::ios::binary);
-        if (file) {
-            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-            wers::wav::Audio audio;
-            if (wers::wav::readBytes(bytes, audio) && !audio.ch.empty() && !audio.ch[0].empty()) {
-                bytes.clear();
-                bytes.shrink_to_fit();
-                std::vector<float> mono(audio.ch[0].size(), 0.0f);
-                const float share = 1.0f / static_cast<float>(audio.ch.size());
-                for (const auto& channel : audio.ch)
-                    for (size_t i = 0; i < mono.size(); ++i) mono[i] += channel[i] * share;
-                result = measureSong(mono, static_cast<double>(audio.rate));
-                ++measured;
+        try {
+            // On Windows a line that is not valid UTF-8 throws here, and it still gets its row.
+            std::ifstream file(fs::path(std::u8string(reinterpret_cast<const char8_t*>(line.data()), line.size())), std::ios::binary);
+            if (file) {
+                std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+                wers::wav::Audio audio;
+                if (wers::wav::readBytes(bytes, audio) && !audio.ch.empty() && !audio.ch[0].empty()) {
+                    bytes.clear();
+                    bytes.shrink_to_fit();
+                    std::vector<float> mono(audio.ch[0].size(), 0.0f);
+                    const float share = 1.0f / static_cast<float>(audio.ch.size());
+                    for (const auto& channel : audio.ch)
+                        for (size_t i = 0; i < mono.size(); ++i) mono[i] += channel[i] * share;
+                    result = measureSong(mono, static_cast<double>(audio.rate));
+                    ++measured;
+                }
             }
+        } catch (const std::exception&) {
+            result = SongResult{};
         }
         char row[256];
-        std::snprintf(row, sizeof(row), "%d\t%.2f\t%d\t%d\t%.2f\t%.2f\t%.2f\t%.2f\n", index, result.seconds, result.sibFrames, result.vowelFrames,
-                      result.sibDropDb, result.vowelDropDb, result.levelDiffDb, result.peakDiffDb);
+        std::snprintf(row, sizeof(row), "%d\t%.2f\t%d\t%d\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\n", index, result.seconds, result.sibFrames, result.vowelFrames,
+                      result.sibDropDb, result.vowelDropDb, result.sibLevelDb, result.vowelLevelDb, result.levelDiffDb, result.peakDiffDb);
         out << row;
     }
     return measured;

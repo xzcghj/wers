@@ -11,8 +11,11 @@ public:
     void reset() noexcept;
     // Returns the linear gain to apply to wet, for this sample.
     float push(float dry, float wet) noexcept;
+    // Stereo: both channels count, so sound that cancels in their sum is measured all the same.
+    float push(float dryLeft, float dryRight, float wetLeft, float wetRight) noexcept;
 private:
-    KWeighting dryWeight_, wetWeight_;
+    float follow(double dryPower, double wetPower) noexcept;
+    std::array<KWeighting, 2> dryWeight_, wetWeight_;
     double powerCoef_ = 0.0, gainCoef_ = 0.0;
     double dryPower_ = 0.0, wetPower_ = 0.0, gain_ = 1.0;
 };
