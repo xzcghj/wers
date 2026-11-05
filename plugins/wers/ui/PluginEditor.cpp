@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "Layout.h"
 #include <algorithm>
 
 namespace wers {

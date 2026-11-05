@@ -1,4 +1,5 @@
 #include "WordPanel.h"
+#include "ScoreColour.h"
 
 namespace wers::ui {
 

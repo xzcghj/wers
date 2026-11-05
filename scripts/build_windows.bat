@@ -17,7 +17,7 @@ echo   WERS: budowa i testy. Kroki: %JOB%
 echo   Pierwsza budowa trwa kilkanascie minut. Wyniki trafiaja do folderu logs.
 echo.
 set BUILD=%ROOT%\build
-set VST=%BUILD%\src\plugin\WERS_artefacts\Release\VST3\WERS.vst3
+set VST=%BUILD%\plugins\wers\plugin\WERS_artefacts\Release\VST3\WERS.vst3
 where cmake >nul 2>nul || set "PATH=C:\Program Files\CMake\bin;%PATH%"
 where git >nul 2>nul || set "PATH=C:\Program Files\Git\cmd;%PATH%"
 
@@ -50,13 +50,13 @@ echo %JOB% | findstr /c:"tests" >nul
 if not errorlevel 1 (
     echo tests %TIME%>> "%STATUS%"
     echo   Testy...
-    "%BUILD%\tests\Release\wers_tests.exe" > "%LOGS%\tests.log" 2>&1
+    "%BUILD%\plugins\wers\tests\Release\wers_tests.exe" > "%LOGS%\tests.log" 2>&1
     if errorlevel 1 ( echo FAILED core tests>> "%STATUS%" ) else ( echo PASSED core tests>> "%STATUS%" )
-    "%BUILD%\src\plugin\Release\wers_plugin_tests.exe" > "%LOGS%\plugin_tests.log" 2>&1
+    "%BUILD%\plugins\wers\plugin\Release\wers_plugin_tests.exe" > "%LOGS%\plugin_tests.log" 2>&1
     if errorlevel 1 ( echo FAILED plugin tests>> "%STATUS%" ) else ( echo PASSED plugin tests>> "%STATUS%" )
     if exist "%ROOT%\testdata\vocal_dry.wav" (
         if not exist "%LOGS%\shots" mkdir "%LOGS%\shots"
-        "%BUILD%\src\plugin\Release\wers_ui_shots.exe" "%LOGS%\shots" "%ROOT%\testdata\vocal_dry.wav" "%ROOT%\testdata\beat.wav" > "%LOGS%\shots.log" 2>&1
+        "%BUILD%\plugins\wers\plugin\Release\wers_ui_shots.exe" "%LOGS%\shots" "%ROOT%\testdata\vocal_dry.wav" "%ROOT%\testdata\beat.wav" > "%LOGS%\shots.log" 2>&1
         if errorlevel 1 ( echo FAILED ui shots>> "%STATUS%" ) else ( echo PASSED ui shots>> "%STATUS%" )
     )
 )
@@ -92,7 +92,7 @@ echo %JOB% | findstr /c:"nettest" >nul
 if not errorlevel 1 (
     rem The plugin's own download code against the real address. Downloads 547 MB to the temporary folder.
     echo nettest %TIME%>> "%STATUS%"
-    "%BUILD%\src\plugin\Release\wers_plugin_tests.exe" -ns -tc="the model downloads*" > "%LOGS%\nettest.log" 2>&1
+    "%BUILD%\plugins\wers\plugin\Release\wers_plugin_tests.exe" -ns -tc="the model downloads*" > "%LOGS%\nettest.log" 2>&1
     if errorlevel 1 ( echo FAILED nettest>> "%STATUS%" ) else ( echo PASSED nettest %TIME%>> "%STATUS%" )
 )
 
@@ -114,7 +114,7 @@ if not errorlevel 1 (
         xcopy /e /i /q /y "%VST%" "!TARGET!\WERS.vst3" >> "%LOGS%\tools.log" 2>&1
         if errorlevel 1 ( echo FAILED install>> "%STATUS%" ) else ( echo PASSED install !TARGET!>> "%STATUS%" )
         if exist "!TARGET!\WERS Probe.vst3" rmdir /s /q "!TARGET!\WERS Probe.vst3"
-        xcopy /e /i /q /y "%BUILD%\tools\probe\WersProbe_artefacts\Release\VST3\WERS Probe.vst3" "!TARGET!\WERS Probe.vst3" >> "%LOGS%\tools.log" 2>&1
+        xcopy /e /i /q /y "%BUILD%\plugins\wers\tools\probe\WersProbe_artefacts\Release\VST3\WERS Probe.vst3" "!TARGET!\WERS Probe.vst3" >> "%LOGS%\tools.log" 2>&1
     )
 )
 
@@ -140,6 +140,6 @@ if not exist "%MODELS%\%~1.bin" (
 powershell -NoProfile -Command "(Get-Item '%MODELS%\%~1.bin').Length; (Get-FileHash '%MODELS%\%~1.bin' -Algorithm SHA1).Hash" > "%LOGS%\%~1_info.txt" 2>&1
 echo transcribe %~1 start %TIME%>> "%STATUS%"
 echo   Rozpoznawanie tekstu: %~1...
-"%BUILD%\tools\Release\wers_cli.exe" "%ROOT%\testdata\vocal_dry.wav" "%ROOT%\testdata\beat.wav" --model "%MODELS%\%~1.bin" --depth 0.4 --dump "%LOGS%\%~2.tsv" --raw-dump "%LOGS%\%~2_raw.txt" > "%LOGS%\%~2.log" 2>&1
+"%BUILD%\plugins\wers\tools\Release\wers_cli.exe" "%ROOT%\testdata\vocal_dry.wav" "%ROOT%\testdata\beat.wav" --model "%MODELS%\%~1.bin" --depth 0.4 --dump "%LOGS%\%~2.tsv" --raw-dump "%LOGS%\%~2_raw.txt" > "%LOGS%\%~2.log" 2>&1
 if errorlevel 1 ( echo FAILED transcribe %~1>> "%STATUS%" ) else ( echo PASSED transcribe %~1 %TIME%>> "%STATUS%" )
 exit /b 0

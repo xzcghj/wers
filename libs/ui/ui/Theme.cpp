@@ -1,5 +1,5 @@
 #include "Theme.h"
-#include <BinaryData.h>
+#include <WersFontsData.h>
 #include <array>
 
 namespace wers::ui {
@@ -11,11 +11,11 @@ struct Faces {
     std::array<juce::Typeface::Ptr, 6> display;
     std::array<juce::Typeface::Ptr, 3> ui;
     Faces() {
-        display = { load(BinaryData::Bricolage300_ttf, BinaryData::Bricolage300_ttfSize), load(BinaryData::Bricolage400_ttf, BinaryData::Bricolage400_ttfSize),
-                    load(BinaryData::Bricolage500_ttf, BinaryData::Bricolage500_ttfSize), load(BinaryData::Bricolage600_ttf, BinaryData::Bricolage600_ttfSize),
-                    load(BinaryData::Bricolage700_ttf, BinaryData::Bricolage700_ttfSize), load(BinaryData::Bricolage800_ttf, BinaryData::Bricolage800_ttfSize) };
-        ui = { load(BinaryData::Instrument400_ttf, BinaryData::Instrument400_ttfSize), load(BinaryData::Instrument500_ttf, BinaryData::Instrument500_ttfSize),
-               load(BinaryData::Instrument600_ttf, BinaryData::Instrument600_ttfSize) };
+        display = { load(WersFontsData::Bricolage300_ttf, WersFontsData::Bricolage300_ttfSize), load(WersFontsData::Bricolage400_ttf, WersFontsData::Bricolage400_ttfSize),
+                    load(WersFontsData::Bricolage500_ttf, WersFontsData::Bricolage500_ttfSize), load(WersFontsData::Bricolage600_ttf, WersFontsData::Bricolage600_ttfSize),
+                    load(WersFontsData::Bricolage700_ttf, WersFontsData::Bricolage700_ttfSize), load(WersFontsData::Bricolage800_ttf, WersFontsData::Bricolage800_ttfSize) };
+        ui = { load(WersFontsData::Instrument400_ttf, WersFontsData::Instrument400_ttfSize), load(WersFontsData::Instrument500_ttf, WersFontsData::Instrument500_ttfSize),
+               load(WersFontsData::Instrument600_ttf, WersFontsData::Instrument600_ttfSize) };
     }
 };
 const Faces& faces() { static const Faces f; return f; }
@@ -75,10 +75,6 @@ void WersLook::drawCornerResizer(juce::Graphics& g, int w, int h, bool isMouseOv
     g.setColour(isMouseOver || isMouseDragging ? colour::dim : colour::faint);
     const auto right = static_cast<float>(w), bottom = static_cast<float>(h);
     for (float inset : { 4.0f, 9.0f }) g.drawLine(right - inset, bottom - 3.0f, right - 3.0f, bottom - inset, 1.2f);
-}
-
-juce::Colour scoreColour(float score) {
-    return score < wers::kScoreDies ? colour::dies : (score < wers::kScoreFades ? colour::weak : colour::accent);
 }
 
 juce::String secondsToClock(double seconds) {

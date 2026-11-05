@@ -48,7 +48,7 @@ cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release --target WERS_VST3
 ```
 
-Gotowa wtyczka powstaje w `build\src\plugin\WERS_artefacts\Release\VST3\WERS.vst3`. Skrypt `scripts\build_windows.bat` robi to samo i uruchamia też testy oraz pluginval.
+Gotowa wtyczka powstaje w `build\plugins\wers\plugin\WERS_artefacts\Release\VST3\WERS.vst3`. Skrypt `scripts\build_windows.bat` robi to samo i uruchamia też testy oraz pluginval.
 
 ## Licencje
 

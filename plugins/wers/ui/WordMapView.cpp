@@ -1,4 +1,5 @@
 #include "WordMapView.h"
+#include "ScoreColour.h"
 #include <algorithm>
 
 namespace wers::ui {
