@@ -70,6 +70,35 @@ TEST_CASE("tape saturates highs first") {
     }
 }
 
+TEST_CASE("tape follows its curve") {
+    // The curve written out with the plain power function, which is too slow to use in the sound.
+    constexpr double kShelfHz = 3000.0, kShelfDb = 6.0, kFlatQ = 0.70710678118654752;
+    for (double fs : { 88200.0, 96000.0, 192000.0 }) {
+        for (float gain : { 1.0f, 4.0f, 16.0f, 63.0f }) {
+            for (double level : { -60.0, -24.0, -6.0, 12.0 }) {
+                CAPTURE(fs); CAPTURE(gain); CAPTURE(level);
+                CharacterShaper shaper;
+                shaper.prepare(fs);
+                shaper.setCharacter(Character::Tape);
+                wers::Biquad emphasis, deemphasis;
+                emphasis.set(wers::Biquad::Type::HighShelf, kShelfHz, kFlatQ, kShelfDb, fs);
+                deemphasis.set(wers::Biquad::Type::HighShelf, kShelfHz, kFlatQ, -kShelfDb, fs);
+                double error = 0.0, signal = 0.0;
+                for (float x : noise(level, 48000)) {
+                    const float u = gain * static_cast<float>(emphasis.tick(static_cast<double>(x)));
+                    const float a = std::abs(u);
+                    const float y = u / std::pow(1.0f + a * a * std::sqrt(a), 0.4f);
+                    const double wanted = deemphasis.tick(static_cast<double>(y / gain));
+                    const double d = static_cast<double>(shaper.tick(x, gain)) - wanted;
+                    error += d * d;
+                    signal += wanted * wanted;
+                }
+                CHECK(10.0 * std::log10((error + 1.0e-30) / signal) < -110.0);
+            }
+        }
+    }
+}
+
 TEST_CASE("transformer saturates lows first") {
     for (double fs : kRates) {
         CAPTURE(fs);

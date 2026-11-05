@@ -1,4 +1,5 @@
 #include "CharacterShaper.h"
+#include <bit>
 
 namespace barwa {
 
@@ -19,6 +20,22 @@ inline float softTanh(float x) noexcept {
     const float top = a * (34459425.0f + s * (4729725.0f + s * (135135.0f + s * (990.0f + s))));
     const float bottom = 34459425.0f + s * (16216200.0f + s * (945945.0f + s * (13860.0f + s * 45.0f)));
     return std::clamp(top / bottom, -1.0f, 1.0f);
+}
+
+// 2 to the power of (exponent / knee), for the root below.
+const std::array<float, 128> kTapeRootOfExponent = [] {
+    std::array<float, 128> table{};
+    for (size_t e = 0; e < table.size(); ++e) table[e] = static_cast<float>(std::pow(2.0, static_cast<double>(e) / kTapeKnee));
+    return table;
+}();
+
+// x to the power of (1 / knee), for x of at least 1, to about 5e-7. The plain power function took more
+// time than the rest of the curve. The exponent of x comes from a table, its mantissa from a polynomial.
+inline float tapeRoot(float x) noexcept {
+    const auto bits = std::bit_cast<std::uint32_t>(x);
+    const float m = std::bit_cast<float>((bits & 0x007fffffu) | 0x3f800000u);
+    const float root = 0.36965585f + m * (1.0400375f + m * (-0.67946905f + m * (0.38494176f + m * (-0.14266242f + m * (0.030283660f + m * -0.0027868701f)))));
+    return kTapeRootOfExponent[std::min((bits >> 23) - 127u, 127u)] * root;
 }
 
 } // namespace
@@ -66,7 +83,7 @@ float CharacterShaper::tick(float x, float gain) noexcept {
             const float u = g * static_cast<float>(emphasis_.tick(static_cast<double>(in)));
             const float a = std::abs(u);
             const float w = a * a * std::sqrt(a);
-            const float y = u / std::pow(1.0f + w, 1.0f / kTapeKnee);
+            const float y = u / tapeRoot(1.0f + w);
             return static_cast<float>(deemphasis_.tick(static_cast<double>(y / g)));
         }
         case Character::Transformer: {
