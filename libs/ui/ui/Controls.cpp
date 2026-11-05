@@ -17,7 +17,8 @@ void FlatButton::paintButton(juce::Graphics& g, bool over, bool down) {
     switch (style_) {
         case Style::Outline:
             border = colour::hairline;
-            if (on) { fill = accent_ ? colour::weak : colour::raised; text = accent_ ? colour::ink : colour::text; border = fill; }
+            if (on && hasOnFill_) { fill = onFill_; text = onText_; border = fill; }
+            else if (on) { fill = accent_ ? colour::weak : colour::raised; text = accent_ ? colour::ink : colour::text; border = fill; }
             else if (over) { fill = colour::raised; }
             break;
         case Style::Solid:
@@ -61,6 +62,10 @@ void SegmentRow::setItems(const juce::StringArray& names, const std::vector<int>
 void SegmentRow::setSelected(int index) {
     selected_ = index;
     for (int i = 0; i < buttons_.size(); ++i) buttons_[i]->setToggleState(i == index, juce::dontSendNotification);
+}
+
+void SegmentRow::setTooltip(const juce::String& text) {
+    for (auto* b : buttons_) b->setTooltip(text);
 }
 
 int SegmentRow::preferredWidth() const {

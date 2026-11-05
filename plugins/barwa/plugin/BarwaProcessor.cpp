@@ -1,4 +1,5 @@
 #include "BarwaProcessor.h"
+#include "ui/BarwaEditor.h"
 
 namespace barwa {
 
@@ -160,6 +161,11 @@ void BarwaProcessor::processChunk(float* const* channels, int count, int n, bool
         }
     }
 
+    float peak = outputPeak_.load(std::memory_order_relaxed);
+    for (int c = 0; c < count; ++c)
+        for (int i = 0; i < n; ++i) peak = juce::jmax(peak, std::abs(channels[c][i]));
+    outputPeak_.store(peak, std::memory_order_relaxed);
+
     int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
     scopeFifo_.prepareToWrite(n, start1, size1, start2, size2);
     if (size1 + size2 == n) {
@@ -250,7 +256,7 @@ void BarwaProcessor::setStateInformation(const void* data, int size) {
     }
 }
 
-juce::AudioProcessorEditor* BarwaProcessor::createEditor() { return new juce::GenericAudioProcessorEditor(*this); }
+juce::AudioProcessorEditor* BarwaProcessor::createEditor() { return new BarwaEditor(*this); }
 
 } // namespace barwa
 

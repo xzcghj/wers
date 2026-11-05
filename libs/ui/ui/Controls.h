@@ -10,11 +10,15 @@ public:
     explicit FlatButton(const juce::String& text, Style style = Style::Outline, bool accentWhenOn = false);
     void setStyle(Style s) { style_ = s; repaint(); }
     void setTextSize(float s) { textSize_ = s; repaint(); }
+    // The look of an Outline button that is on, in place of the default.
+    void setOnFill(juce::Colour fill, juce::Colour label) { onFill_ = fill; onText_ = label; hasOnFill_ = true; repaint(); }
     void paintButton(juce::Graphics&, bool over, bool down) override;
 private:
     Style style_;
     bool accent_;
     float textSize_ = 14.0f;
+    bool hasOnFill_ = false;
+    juce::Colour onFill_, onText_;
 };
 
 // A row of buttons of which one is on.
@@ -25,6 +29,7 @@ public:
     void setSelected(int index);
     int selected() const { return selected_; }
     int preferredWidth() const;
+    void setTooltip(const juce::String& text);
     void resized() override;
     void paint(juce::Graphics&) override;
 private:

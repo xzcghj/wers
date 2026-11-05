@@ -2,9 +2,11 @@
 #define DOCTEST_CONFIG_IMPLEMENT
 #include "doctest.h"
 #include "plugin/BarwaProcessor.h"
+#include "ui/BarwaEditor.h"
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <map>
 #include <new>
 #include <thread>
@@ -159,6 +161,7 @@ TEST_CASE("audio thread never allocates") {
     auto* tone = p.state().getParameter(ids::tone);
     auto* bands = p.state().getParameter(ids::bands);
     auto* character = p.state().getParameter(ids::char1);
+    p.takeOutputPeak();
     gAllocations = 0;
     gCount = true;
     for (int from = 0; from + 256 <= audio.getNumSamples(); from += 256) {
@@ -458,6 +461,20 @@ TEST_CASE("parameters match the specification") {
     CHECK(p.getBypassParameter() == p.state().getParameter(ids::bypass));
 }
 
+TEST_CASE("the output peak is there for the warning") {
+    BarwaProcessor p;
+    p.prepareToPlay(48000.0, 256);
+    auto quiet = noiseBuffer(2, 2048, 0.25f);
+    runBlocks(p, quiet, 256);
+    CHECK(p.takeOutputPeak() < 1.0f);
+    auto loud = noiseBuffer(2, 2048, 2.0f);
+    runBlocks(p, loud, 256);
+    auto tail = noiseBuffer(2, 512, 2.0f);
+    runBlocks(p, tail, 256);
+    CHECK(p.takeOutputPeak() > 1.0f);
+    CHECK(p.takeOutputPeak() == 0.0f);
+}
+
 TEST_CASE("the mask value reaches the sound") {
     BarwaProcessor p;
     p.prepareToPlay(48000.0, 256);
@@ -474,6 +491,118 @@ TEST_CASE("the mask value reaches the sound") {
     const float open = again.getRMSLevel(0, 24000, 24000);
     CHECK(open > masked * 4.0f);
     CHECK(p.maskNow() == doctest::Approx(1.0f));
+}
+
+namespace {
+
+juce::MouseEvent mouseAt(juce::Component& component, float x, float y) {
+    const juce::Point<float> position(x, y);
+    const auto now = juce::Time::getCurrentTime();
+    return juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(), position, juce::ModifierKeys(), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, &component, &component, now, position, now, 1, false);
+}
+
+class GestureCounter final : public juce::AudioProcessorParameter::Listener {
+public:
+    int begun = 0, ended = 0, changes = 0;
+    void parameterValueChanged(int, float) override { ++changes; }
+    void parameterGestureChanged(int, bool starting) override { ++(starting ? begun : ended); }
+};
+
+} // namespace
+
+TEST_CASE("editor opens and closes in every state") {
+    BarwaProcessor p;
+    p.prepareToPlay(48000.0, 512);
+    juce::MidiBuffer midi;
+    for (int round = 0; round < 3; ++round) {
+        for (float bands : { 0.0f, 1.0f, 2.0f }) {
+            setParam(p, ids::bands, bands);
+            for (bool withSound : { false, true }) {
+                std::unique_ptr<juce::AudioProcessorEditor> window(p.createEditor());
+                auto* editor = dynamic_cast<BarwaEditor*>(window.get());
+                REQUIRE(editor != nullptr);
+                CHECK(window->getWidth() == 1040);
+                CHECK(window->getHeight() == 680);
+                if (withSound) {
+                    auto audio = noiseBuffer(2, 4096, 0.5f);
+                    runBlocks(p, audio, 512);
+                }
+                editor->updateNow();
+                const auto image = window->createComponentSnapshot(window->getLocalBounds(), true, 1.0f);
+                CHECK(image.isValid());
+            }
+        }
+    }
+    // It keeps the size it was left at, within limits.
+    p.setUiScale(1.3f);
+    std::unique_ptr<juce::AudioProcessorEditor> larger(p.createEditor());
+    CHECK(larger->getWidth() == juce::roundToInt(1040 * 1.3f));
+    CHECK(larger->getHeight() == juce::roundToInt(680 * 1.3f));
+}
+
+TEST_CASE("dragging a split changes its parameter") {
+    BarwaProcessor p;
+    p.prepareToPlay(48000.0, 512);
+    std::unique_ptr<juce::AudioProcessorEditor> window(p.createEditor());
+    auto* editor = dynamic_cast<BarwaEditor*>(window.get());
+    REQUIRE(editor != nullptr);
+    auto& view = editor->spectrum();
+
+    // With one band there is nothing to drag.
+    editor->updateNow();
+    CHECK(view.handleCount() == 0);
+    const float before = getParam(p, ids::xover1);
+    view.mouseDown(mouseAt(view, 300.0f, 100.0f));
+    view.mouseDrag(mouseAt(view, 400.0f, 100.0f));
+    view.mouseUp(mouseAt(view, 400.0f, 100.0f));
+    CHECK(getParam(p, ids::xover1) == doctest::Approx(before));
+
+    setParam(p, ids::bands, 2.0f);
+    editor->updateNow();
+    REQUIRE(view.handleCount() == 2);
+
+    GestureCounter counter;
+    auto* parameter = p.state().getParameter(ids::xover1);
+    parameter->addListener(&counter);
+    const float x = view.handleX(0);
+    view.mouseDown(mouseAt(view, x, 100.0f));
+    CHECK(counter.begun == 1);
+    view.mouseDrag(mouseAt(view, x + 60.0f, 100.0f));
+    CHECK(getParam(p, ids::xover1) > before * 1.2f);
+    CHECK(counter.changes > 0);
+    view.mouseUp(mouseAt(view, x + 60.0f, 100.0f));
+    CHECK(counter.ended == 1);
+    parameter->removeListener(&counter);
+
+    // The second handle moves the second split, and a split stops at the end of its range.
+    const float second = view.handleX(1);
+    const float xover1Now = getParam(p, ids::xover1);
+    view.mouseDown(mouseAt(view, second, 100.0f));
+    view.mouseDrag(mouseAt(view, 1030.0f, 100.0f));
+    view.mouseUp(mouseAt(view, 1030.0f, 100.0f));
+    CHECK(getParam(p, ids::xover2) == doctest::Approx(10000.0f));
+    CHECK(getParam(p, ids::xover1) == doctest::Approx(xover1Now));
+
+    // A click away from the handles changes nothing.
+    const float xover2Now = getParam(p, ids::xover2);
+    view.mouseDown(mouseAt(view, 5.0f, 100.0f));
+    view.mouseDrag(mouseAt(view, 50.0f, 100.0f));
+    view.mouseUp(mouseAt(view, 50.0f, 100.0f));
+    CHECK(getParam(p, ids::xover1) == doctest::Approx(xover1Now));
+    CHECK(getParam(p, ids::xover2) == doctest::Approx(xover2Now));
+}
+
+TEST_CASE("band columns follow the band count") {
+    BarwaProcessor p;
+    std::unique_ptr<juce::AudioProcessorEditor> window(p.createEditor());
+    auto* editor = dynamic_cast<BarwaEditor*>(window.get());
+    REQUIRE(editor != nullptr);
+    for (int bands : { 1, 3, 2, 1 }) {
+        setParam(p, ids::bands, static_cast<float>(bands - 1));
+        editor->updateNow();
+        CHECK(editor->visibleBandColumns() == bands);
+        CHECK(editor->spectrum().handleCount() == bands - 1);
+    }
 }
 
 int main(int argc, char** argv) {

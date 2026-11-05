@@ -43,6 +43,8 @@ public:
     double hostRate() const noexcept { return fs_; }
     // Takes n samples of the input and the output for the display, if that many are waiting.
     bool popScope(float* in, float* out, int n) noexcept;
+    // The highest output sample since the last call, as a linear value.
+    float takeOutputPeak() noexcept { return outputPeak_.exchange(0.0f, std::memory_order_relaxed); }
     float uiScale() const noexcept { return uiScale_.load(); }
     void setUiScale(float scale) noexcept { uiScale_.store(scale); }
 private:
@@ -73,6 +75,7 @@ private:
     juce::AbstractFifo scopeFifo_{ kScopeSize };
     std::vector<float> scopeIn_, scopeOut_;
 
+    std::atomic<float> outputPeak_{ 0.0f };
     std::atomic<bool> maskDecided_{ false };
     std::atomic<float> uiScale_{ 1.0f };
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BarwaProcessor)
