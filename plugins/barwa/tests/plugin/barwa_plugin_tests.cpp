@@ -13,10 +13,11 @@
 
 using namespace barwa;
 
+// Only the thread under test counts: the timer thread of JUCE allocates now and then by itself.
 static std::atomic<long> gAllocations{ 0 };
-static std::atomic<bool> gCount{ false };
+static thread_local bool gCount = false;
 void* operator new(std::size_t n) {
-    if (gCount.load(std::memory_order_relaxed)) gAllocations.fetch_add(1);
+    if (gCount) gAllocations.fetch_add(1);
     if (void* p = std::malloc(n ? n : 1)) return p;
     throw std::bad_alloc{};
 }
