@@ -1,6 +1,6 @@
 # WERS Refren: specyfikacja wersji 1
 
-Data: 2026-11-05. Status: czeka na przegląd użytkownika. Implementacja rusza dopiero po akceptacji tego pliku i planu oraz po domknięciu Barwy.
+Data: 2026-11-05. Status: zaakceptowana przez użytkownika. Implementacja rusza dopiero po akceptacji planu (`docs/superpowers/plans/2026-11-05-refren.md`) oraz po domknięciu Barwy.
 
 ## Cel
 
@@ -103,18 +103,18 @@ Wykrywanie wysokości: YIN na sygnale zdecymowanym do około 12 kHz, krok 2,5 ms
 Klasyfikator z `libs/dsp` pracuje na niepóźnionej sumie mono:
 
 ```
-w = clamp(samogłoska + 0,2 × zwarta, 0, 1)
+w = clamp(samogłoska / 0,75 + 0,2 × zwarta, 0, 1)
 w_min = minimum w z ostatnich Cd = 20 ms
 c = (1 − s) + s × w_min        s to parametr Spółgłoski, 0..1
 ```
 
-Sygnał dla głosów bez zmiany wysokości to `y(n) = x(n − Cd) × c(n)`, ze zboczem najwyżej 3 ms. W warstwach z interwałem i warstwach Robot TD-PSOLA pracuje na niemaskowanym wejściu, a maska, wyrównana w czasie, trafia na jego wynik. Minimum z okna sprawia, że maska zamyka się przed głoską syczącą, a nie po niej. Otwiera się później, na początku samogłoski, co nie przeszkadza. W obu przypadkach maska jest nałożona przed przesunięciami w czasie, więc każdy głos gaśnie dokładnie na swojej kopii głoski.
+Sygnał dla głosów bez zmiany wysokości to `y(n) = x(n − Cd) × c(n)`, ze zboczem najwyżej 3 ms. W warstwach z interwałem i warstwach Robot TD-PSOLA pracuje na niemaskowanym wejściu, a maska, wyrównana w czasie, trafia na jego wynik. Dzielenie przez 0,75 pochodzi z pomiarów Barwy na prawdziwych numerach: klasyfikator uznaje wysunięty, jasny głos tylko częściowo za samogłoskę, a nie jest to powód, żeby go przyciszać. Minimum z okna sprawia, że maska zamyka się przed głoską syczącą, a nie po niej. Otwiera się później, na początku samogłoski, co nie przeszkadza. W obu przypadkach maska jest nałożona przed przesunięciami w czasie, więc każdy głos gaśnie dokładnie na swojej kopii głoski.
 
 ### Szyna
 
 Wszystko poniżej działa tylko na mokrym sygnale:
 
-- **Ziarno:** `CharacterShaper` przy oversamplingu 2x, wybór charakteru, Drive 0–36 dB. Przy 0 dB nic nie zmienia. Jego opóźnienie jest stałe i wliczone w `L`.
+- **Ziarno:** `CharacterShaper` przy oversamplingu 2x, wybór charakteru, Drive 0–36 dB. Przy 0 dB nic nie zmienia. Jego opóźnienie jest stałe i wliczone w `L`. Ma własne wyrównanie poziomu (`LevelMatch`), które dotyczy tylko samego ziarna, więc suwak nie zmienia głośności, a ogony nie pompują, bo echo i pogłos są za nim.
 - **Ton:** nachylenie wokół 1 kHz, ±6 dB.
 - **Ruch:** Brak, Autopan, Tremolo albo Flanger, z częstotliwością 0,05–10 Hz i głębokością. Sprzężenie flangera ma limit 0,7.
 - **Echo:** stereo, w tempie hosta, a bez tempa przy 120 BPM. Czasy 1/16, 1/8, 1/8 z kropką, 1/4, 1/4 z kropką, 1/2 i slap 80 ms. Sprzężenie do 90%, ping-pong, filtr dolny.
@@ -124,12 +124,12 @@ Wszystko poniżej działa tylko na mokrym sygnale:
 
 ### Głośność
 
-Bez Auto poziomu, bo ogony pogłosu by pompowały. Każdy preset fabryczny ma stałe **Wyrównanie**, ustawione narzędziem na etapie tworzenia presetów, tak żeby przy Ile 100% głośność z wagą K była równa głośności wejścia. Wartość jest zapisana w presecie.
+Poza samym ziarnem nie ma Auto poziomu, bo ogony pogłosu by pompowały. Każdy preset fabryczny ma stałe **Wyrównanie**, ustawione narzędziem na etapie tworzenia presetów, tak żeby przy Ile 100% głośność z wagą K była równa głośności wejścia. Wartość jest zapisana w presecie.
 
 ### Płynność
 
 - Parametry są czytane co 32 próbki (skalowane z częstotliwością) i wygładzane przez 20 ms.
-- Zmiany, których nie da się wygładzić (źródło, liczba głosów, interwał, barwa, nuta), przechodzą przez bramkę: mokry sygnał gaśnie w 20 ms, zmiana, 10 ms ciszy, powrót w 20 ms. Suchy głos gra dalej bez zmian.
+- Zmiany, których nie da się wygładzić (źródło, liczba głosów, interwał, barwa, nuta, włączenie warstwy, a w szynie charakter ziarna, rodzaj ruchu, czas echa, ping-pong i rozmiar pogłosu), przechodzą przez bramkę: mokry sygnał gaśnie w 20 ms, zmiana, 10 ms ciszy, powrót w 20 ms. Ogony echa i pogłosu są wtedy kasowane. Te parametry nie są automatyzowane, więc dzieje się to tylko przy ruchu ręcznym albo zmianie presetu. Suchy głos gra dalej bez zmian.
 - Nie ma alokacji, blokad, plików ani wątków w torze audio. Pamięć jest przydzielana w `prepare`.
 
 ## Parametry
