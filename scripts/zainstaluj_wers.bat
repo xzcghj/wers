@@ -14,6 +14,12 @@ if not exist "%SOURCE%" (
     pause
     exit /b 1
 )
+tasklist /m WERS.vst3 2>nul | findstr /i ".exe" >nul
+if not errorlevel 1 (
+    echo WERS jest wczytany w DAW. Zamknij DAW i uruchom ten plik jeszcze raz.
+    pause
+    exit /b 1
+)
 if not exist "%TARGET%" mkdir "%TARGET%"
 if exist "%TARGET%\WERS.vst3" rmdir /s /q "%TARGET%\WERS.vst3"
 xcopy /e /i /q /y "%SOURCE%" "%TARGET%\WERS.vst3" >nul

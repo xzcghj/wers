@@ -14,25 +14,27 @@ CharacterPad::CharacterPad(WersProcessor& p) : proc_(p) {
 }
 
 void CharacterPad::resized() {
-    constexpr int w = 72, h = 40;
-    gloss_.setBounds(0, 0, w, h);
-    rage_.setBounds(getWidth() - w, 0, w, h);
-    szept_.setBounds(0, getHeight() - h, w, h);
-    drill_.setBounds(getWidth() - w, getHeight() - h, w, h);
+    constexpr int w = 60, h = 30, m = 6;
+    gloss_.setBounds(m, m, w, h);
+    rage_.setBounds(getWidth() - w - m, m, w, h);
+    szept_.setBounds(m, getHeight() - h - m, w, h);
+    drill_.setBounds(getWidth() - w - m, getHeight() - h - m, w, h);
 }
 
 void CharacterPad::paint(juce::Graphics& g) {
-    auto r = getLocalBounds().toFloat();
-    g.setColour(colour::line);
-    g.drawRoundedRectangle(r.reduced(0.5f), 3.0f, 1.0f);
-    g.setColour(colour::track);
+    const auto r = getLocalBounds().toFloat();
+    g.setColour(colour::bg);
+    g.fillRoundedRectangle(r, 8.0f);
+    g.setColour(colour::hairline);
     g.fillRect(r.getCentreX() - 0.5f, r.getY() + 1.0f, 1.0f, r.getHeight() - 2.0f);
     g.fillRect(r.getX() + 1.0f, r.getCentreY() - 0.5f, r.getWidth() - 2.0f, 1.0f);
     const float x = x_->getValue(), y = y_->getValue();
     const float px = r.getX() + 10.0f + x * (r.getWidth() - 20.0f);
     const float py = r.getBottom() - 10.0f - y * (r.getHeight() - 20.0f);
-    g.setColour(colour::yellow);
-    g.fillEllipse(px - 8.0f, py - 8.0f, 16.0f, 16.0f);
+    g.setColour(colour::accent.withAlpha(0.18f));
+    g.fillEllipse(px - 15.0f, py - 15.0f, 30.0f, 30.0f);
+    g.setColour(colour::accent);
+    g.fillEllipse(px - 6.0f, py - 6.0f, 12.0f, 12.0f);
 }
 
 void CharacterPad::setFromPoint(juce::Point<int> p) {
@@ -69,7 +71,13 @@ ModuleStrip::ModuleStrip(WersProcessor& p) : proc_(p), pad_(p) {
     place_.slider.onDragEnd = [this] { if (auto* g = proc_.group()) g->requestPlaceDepth(static_cast<float>(place_.slider.getValue()) * 0.01f); };
 }
 
-void ModuleStrip::paint(juce::Graphics& g) { g.fillAll(colour::dark); }
+void ModuleStrip::paint(juce::Graphics& g) {
+    g.fillAll(colour::surface);
+    g.setColour(colour::hairline);
+    g.fillRect(0, 0, getWidth(), 1);
+    // A line between modules, in the middle of the gaps laid out in resized().
+    for (int x : { 438, 672, 906 }) g.fillRect(x, 18, 1, getHeight() - 36);
+}
 
 void ModuleStrip::resized() {
     auto b = getLocalBounds().reduced(28, 16);

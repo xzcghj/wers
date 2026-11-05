@@ -27,6 +27,7 @@ void ReaperBridge::setIHostApplication(Steinberg::FUnknown* host) {
     getValue_ = getValue;
     getParent_ = reinterpret_cast<GetParent>(reaper->getReaperApi("GetParentTrack"));
     validate_ = reinterpret_cast<Validate>(reaper->getReaperApi("ValidatePtr2"));
+    setCursor_ = reinterpret_cast<SetCursor>(reaper->getReaperApi("SetEditCurPos2"));
 }
 
 void* ReaperBridge::parentTrack() const noexcept {
@@ -40,6 +41,13 @@ void* ReaperBridge::parentTrack() const noexcept {
 
 const void* ReaperBridge::project() const noexcept {
     return host_ != nullptr ? reaperHost(host_)->getReaperParent(3) : nullptr;
+}
+
+bool ReaperBridge::seek(double seconds) const noexcept {
+    if (host_ == nullptr || setCursor_ == nullptr) return false;
+    constexpr double kLeadIn = 0.25; // the start of a word is easier to judge with what comes before it
+    setCursor_(reaperHost(host_)->getReaperParent(3), juce::jmax(0.0, seconds - kLeadIn), true, true);
+    return true;
 }
 
 float ReaperBridge::trackGainDb() const noexcept {

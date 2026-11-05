@@ -26,6 +26,7 @@ enum class Cause : uint8_t { None = 0, Beat = 1, TooQuiet = 2 };
 
 struct WordFix {
     bool active = false;
+    bool tried = false;        // the planner looked for this target and found no fix that helps
     Device target = Device::Phone;
     std::array<float, kBoostBands> vocalBoostDb{};
     std::array<float, kCutBands> beatCutDb{};
@@ -46,6 +47,11 @@ struct Word {
     std::array<DeviceVerdict, kNumDevices> verdict{};
     WordFix fix;
     std::vector<std::pair<float, float>> consonants; // consonant spans in seconds
+
+    // Weak on this device, with no fix yet and no failed attempt at one.
+    bool needsFix(Device d, float threshold) const noexcept {
+        return !fix.active && verdict[static_cast<size_t>(d)].score < threshold && !(fix.tried && fix.target == d);
+    }
 };
 
 // Spectral frames of both signals, the input of every score computation.

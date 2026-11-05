@@ -68,6 +68,10 @@ public:
     void applySuggestion(const SuggestedSettings& s);
     void applyCharacterPreset(float x, float y, float density, float clarity, float space);
     float uiScale() const noexcept { return uiScale_.load(); }
+    // Message thread only.
+    bool canSeek() const noexcept { return reaper_.canSeek(); }
+    void seekTo(double seconds) const noexcept { reaper_.seek(seconds); }
+    int shownWord = -1; // the word selected in the editor, kept while its window is closed
     void setUiScale(float s) noexcept { uiScale_.store(s); }
     bool startAnalysis();
     void chooseRole(Role r);

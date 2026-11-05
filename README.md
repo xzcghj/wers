@@ -18,8 +18,8 @@ Tekst piosenki rozpoznaje model mowy (około 550 MB). Wtyczka pyta o jego pobran
 1. Dodaj WERS na ślad wokalu lub folder wokalu, najlepiej na końcu łańcucha, zaraz po kompresji i saturacji. Rola Wokal.
 2. Dodaj WERS na ślad bitu. Rola Bit. Ślady o nazwach w rodzaju `beat` i `main` dostają właściwą rolę same.
 3. W oknie na wokalu kliknij **Przesłuchaj numer** i puść numer od początku do końca. Po zatrzymaniu analiza rusza sama.
-4. Wybierz urządzenie u góry. Żółte słowa słabną, różowe giną. Kliknij słowo, żeby zobaczyć przyczynę i korektę.
-5. Kliknij **Napraw słowo** albo **Napraw wszystkie**. **Słuchaj bez napraw** porównuje przed i po.
+4. Wybierz urządzenie u góry. Bursztynowe słowa słabną, koralowe giną. Pasek nad tekstem pokazuje cały numer: im wyższy słupek, tym gorzej słychać słowo. Kliknij słowo albo słupek, żeby zobaczyć przyczynę, korektę i ocenę na każdym urządzeniu. Dwuklik na słowie przewija REAPERa w to miejsce.
+5. Kliknij **Napraw słowo** albo **Napraw wszystkie**. **Słuchaj bez napraw** porównuje przed i po, a **Cofnij wszystkie naprawy** wraca do początku.
 6. Opcjonalnie dodaj WERS na master, rola Master: LUFS, true peak, symulacja urządzeń i normalizacji Spotify. W renderze symulacja wyłącza się sama.
 
 Jeśli masz gotowy tekst, wklej go w **Tekst numeru**. Wtyczka poprawi nim pisownię rozpoznanych słów.

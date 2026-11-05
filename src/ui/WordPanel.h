@@ -13,8 +13,7 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
-    struct Chip { juce::String text; bool on; };
-    static std::vector<Chip> phonemeChips(const juce::String& word, bool hasConsonantFix);
+    void paintDevices(juce::Graphics&, juce::Rectangle<int> area, const Word&) const;
     juce::String statusLine(const Word&) const;
     juce::String causeLine(const Word&) const;
     static juce::String vocalFixLine(const WordFix&);
@@ -26,8 +25,8 @@ private:
     int index_ = -1;
     bool compare_ = false;
     SongSession::Preview preview_;
-    FlatButton fix_{ pl("Napraw słowo"), FlatButton::Style::OnPaper };
-    FlatButton undo_{ pl("Cofnij naprawę"), FlatButton::Style::OnPaperOutline };
+    FlatButton fix_{ pl("Napraw słowo"), FlatButton::Style::Solid };
+    FlatButton undo_{ pl("Cofnij naprawę"), FlatButton::Style::Outline };
 };
 
 } // namespace wers::ui

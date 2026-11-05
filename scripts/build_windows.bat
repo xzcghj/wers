@@ -104,11 +104,18 @@ if not errorlevel 1 (
     rem The per-user VST3 folder needs no administrator rights.
     set "TARGET=%LOCALAPPDATA%\Programs\Common\VST3"
     if not exist "!TARGET!" mkdir "!TARGET!"
-    if exist "!TARGET!\WERS.vst3" rmdir /s /q "!TARGET!\WERS.vst3"
-    xcopy /e /i /q /y "%VST%" "!TARGET!\WERS.vst3" >> "%LOGS%\tools.log" 2>&1
-    if errorlevel 1 ( echo FAILED install>> "%STATUS%" ) else ( echo PASSED install !TARGET!>> "%STATUS%" )
-    if exist "!TARGET!\WERS Probe.vst3" rmdir /s /q "!TARGET!\WERS Probe.vst3"
-    xcopy /e /i /q /y "%BUILD%\tools\probe\WersProbe_artefacts\Release\VST3\WERS Probe.vst3" "!TARGET!\WERS Probe.vst3" >> "%LOGS%\tools.log" 2>&1
+    rem A running DAW holds the plugin file. Deleting around it would leave a broken copy, so nothing is touched then.
+    tasklist /m WERS.vst3 2>nul | findstr /i ".exe" >nul
+    if not errorlevel 1 (
+        echo SKIPPED install: WERS is loaded in a running program>> "%STATUS%"
+        echo   Nowa wersja gotowa, ale WERS jest wczytany w DAW. Stara wersja zostaje bez zmian.
+    ) else (
+        if exist "!TARGET!\WERS.vst3" rmdir /s /q "!TARGET!\WERS.vst3"
+        xcopy /e /i /q /y "%VST%" "!TARGET!\WERS.vst3" >> "%LOGS%\tools.log" 2>&1
+        if errorlevel 1 ( echo FAILED install>> "%STATUS%" ) else ( echo PASSED install !TARGET!>> "%STATUS%" )
+        if exist "!TARGET!\WERS Probe.vst3" rmdir /s /q "!TARGET!\WERS Probe.vst3"
+        xcopy /e /i /q /y "%BUILD%\tools\probe\WersProbe_artefacts\Release\VST3\WERS Probe.vst3" "!TARGET!\WERS Probe.vst3" >> "%LOGS%\tools.log" 2>&1
+    )
 )
 
 echo DONE %DATE% %TIME%>> "%STATUS%"

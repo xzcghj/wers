@@ -32,55 +32,53 @@ juce::Font uiFont(int weight, float size) {
 }
 
 WersLook::WersLook() {
-    setColour(juce::PopupMenu::backgroundColourId, colour::dark);
-    setColour(juce::PopupMenu::textColourId, colour::paper);
-    setColour(juce::PopupMenu::highlightedBackgroundColourId, colour::paper);
-    setColour(juce::PopupMenu::highlightedTextColourId, colour::ground);
-    setColour(juce::TextEditor::backgroundColourId, colour::paper);
-    setColour(juce::TextEditor::textColourId, colour::ground);
-    setColour(juce::TextEditor::highlightColourId, colour::yellow);
-    setColour(juce::TextEditor::highlightedTextColourId, colour::ground);
-    setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
-    setColour(juce::TextEditor::focusedOutlineColourId, colour::yellow);
-    setColour(juce::CaretComponent::caretColourId, colour::ground);
-    setColour(juce::TooltipWindow::backgroundColourId, colour::paper);
-    setColour(juce::TooltipWindow::textColourId, colour::ground);
-    setColour(juce::TooltipWindow::outlineColourId, colour::line);
+    setColour(juce::PopupMenu::backgroundColourId, colour::raised);
+    setColour(juce::PopupMenu::textColourId, colour::text);
+    setColour(juce::PopupMenu::highlightedBackgroundColourId, colour::accent);
+    setColour(juce::PopupMenu::highlightedTextColourId, colour::ink);
+    setColour(juce::TextEditor::backgroundColourId, colour::surface);
+    setColour(juce::TextEditor::textColourId, colour::text);
+    setColour(juce::TextEditor::highlightColourId, colour::accent.withAlpha(0.35f));
+    setColour(juce::TextEditor::highlightedTextColourId, colour::text);
+    setColour(juce::TextEditor::outlineColourId, colour::hairline);
+    setColour(juce::TextEditor::focusedOutlineColourId, colour::accent);
+    setColour(juce::CaretComponent::caretColourId, colour::accent);
+    setColour(juce::TooltipWindow::backgroundColourId, colour::raised);
+    setColour(juce::TooltipWindow::textColourId, colour::text);
+    setColour(juce::TooltipWindow::outlineColourId, colour::hairline);
 }
 
 void WersLook::drawLinearSlider(juce::Graphics& g, int x, int y, int width, int height, float sliderPos, float, float, juce::Slider::SliderStyle, juce::Slider& s) {
     const auto cy = static_cast<float>(y) + static_cast<float>(height) * 0.5f;
     const auto left = static_cast<float>(x), right = static_cast<float>(x + width);
-    const float alpha = s.isEnabled() ? 1.0f : 0.35f;
-    g.setColour(colour::track.withMultipliedAlpha(alpha));
-    g.fillRoundedRectangle(left, cy - 3.0f, right - left, 6.0f, 3.0f);
-    const bool bipolar = s.getMinimum() < 0.0;
-    const float zero = bipolar ? static_cast<float>(s.getPositionOfValue(0.0)) + static_cast<float>(x) * 0.0f : left;
-    g.setColour(colour::yellow.withMultipliedAlpha(alpha));
+    const float alpha = s.isEnabled() ? 1.0f : 0.4f;
+    g.setColour(colour::hairline.withMultipliedAlpha(alpha));
+    g.fillRoundedRectangle(left, cy - 2.0f, right - left, 4.0f, 2.0f);
+    const float zero = s.getMinimum() < 0.0 ? static_cast<float>(s.getPositionOfValue(0.0)) : left;
+    g.setColour(colour::accent.withMultipliedAlpha(alpha));
     const float a = juce::jmin(zero, sliderPos), b = juce::jmax(zero, sliderPos);
-    g.fillRoundedRectangle(a, cy - 3.0f, juce::jmax(0.0f, b - a), 6.0f, 3.0f);
-    const float r = s.isMouseOverOrDragging() ? 8.0f : 7.0f;
+    g.fillRoundedRectangle(a, cy - 2.0f, juce::jmax(0.0f, b - a), 4.0f, 2.0f);
+    const float r = s.isMouseOverOrDragging() ? 7.0f : 6.0f;
+    if (s.isMouseButtonDown()) {
+        g.setColour(colour::accent.withAlpha(0.25f));
+        g.fillEllipse(sliderPos - r - 5.0f, cy - r - 5.0f, (r + 5.0f) * 2.0f, (r + 5.0f) * 2.0f);
+    }
+    g.setColour(colour::text.withMultipliedAlpha(alpha));
     g.fillEllipse(sliderPos - r, cy - r, r * 2.0f, r * 2.0f);
     if (s.hasKeyboardFocus(false)) {
-        g.setColour(colour::paper);
+        g.setColour(colour::accent);
         g.drawEllipse(sliderPos - r - 2.0f, cy - r - 2.0f, (r + 2.0f) * 2.0f, (r + 2.0f) * 2.0f, 1.5f);
     }
 }
 
-juce::Path markerShape(juce::Rectangle<float> r) {
-    const float tl = 3.0f, tr = 10.0f, br = 4.0f, bl = 9.0f;
-    juce::Path p;
-    p.startNewSubPath(r.getX() + tl, r.getY());
-    p.lineTo(r.getRight() - tr, r.getY());
-    p.quadraticTo(r.getRight(), r.getY(), r.getRight(), r.getY() + tr);
-    p.lineTo(r.getRight(), r.getBottom() - br);
-    p.quadraticTo(r.getRight(), r.getBottom(), r.getRight() - br, r.getBottom());
-    p.lineTo(r.getX() + bl, r.getBottom());
-    p.quadraticTo(r.getX(), r.getBottom(), r.getX(), r.getBottom() - bl);
-    p.lineTo(r.getX(), r.getY() + tl);
-    p.quadraticTo(r.getX(), r.getY(), r.getX() + tl, r.getY());
-    p.closeSubPath();
-    return p;
+void WersLook::drawCornerResizer(juce::Graphics& g, int w, int h, bool isMouseOver, bool isMouseDragging) {
+    g.setColour(isMouseOver || isMouseDragging ? colour::dim : colour::faint);
+    const auto right = static_cast<float>(w), bottom = static_cast<float>(h);
+    for (float inset : { 4.0f, 9.0f }) g.drawLine(right - inset, bottom - 3.0f, right - 3.0f, bottom - inset, 1.2f);
+}
+
+juce::Colour scoreColour(float score) {
+    return score < wers::kScoreDies ? colour::dies : (score < wers::kScoreFades ? colour::weak : colour::accent);
 }
 
 juce::String secondsToClock(double seconds) {

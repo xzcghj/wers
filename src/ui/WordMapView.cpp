@@ -4,8 +4,8 @@
 namespace wers::ui {
 
 namespace {
-constexpr float kFontSize = 44.0f;
-constexpr int kRowH = 72, kPad = 28, kTop = 24;
+constexpr float kFontSize = 38.0f;
+constexpr int kRowH = 60, kPad = 28, kTop = 18, kOverviewH = 30;
 
 int weightForScore(float score) {
     // A weaker word is drawn thinner, so the page shows the problem before anything is read.
@@ -41,7 +41,7 @@ juce::String WordMapView::summaryText(int dying, int fading, Device device) {
 }
 
 WordMapView::WordMapView(WersProcessor& p) : proc_(p) {
-    for (auto* b : { &listen_, &finish_, &cancel_, &again_, &lyrics_, &fixAll_, &getModel_ }) addChildComponent(b);
+    for (auto* b : { &listen_, &finish_, &cancel_, &again_, &lyrics_, &fixAll_, &undoAll_, &getModel_ }) addChildComponent(b);
     listen_.setTextSize(20.0f);
     finish_.setTextSize(20.0f);
     listen_.onClick = [this] { proc_.startAnalysis(); };
@@ -50,12 +50,23 @@ WordMapView::WordMapView(WersProcessor& p) : proc_(p) {
     cancel_.onClick = [this] { proc_.session().cancelListening(); };
     lyrics_.onClick = [this] { if (onEditLyrics) onEditLyrics(); };
     fixAll_.onClick = [this] { proc_.session().fixAllBelow(kScoreFades, device_); };
+    undoAll_.onClick = [this] { proc_.session().clearAllFixes(); };
     getModel_.onClick = [this] { proc_.model().startDownload(); };
     setMouseCursor(juce::MouseCursor::NormalCursor);
 }
 
 juce::Rectangle<int> WordMapView::wordsArea() const {
-    return { kPad, kTop + 46, getWidth() - kPad * 2, getHeight() - (kTop + 46) - 42 };
+    const int top = overviewArea().getBottom() + 8;
+    return { kPad, top, getWidth() - kPad * 2, getHeight() - top - 40 };
+}
+
+juce::Rectangle<int> WordMapView::overviewArea() const {
+    return { kPad, kTop + 38, getWidth() - kPad * 2, kOverviewH };
+}
+
+float WordMapView::shownScore(const Word& w) const {
+    const auto& v = w.verdict[static_cast<size_t>(device_)];
+    return compare_ ? v.baseScore : v.score;
 }
 
 void WordMapView::resized() {
@@ -66,6 +77,7 @@ void WordMapView::resized() {
     again_.setBounds(w - kPad - 164, kTop - 2, 164, 30);
     lyrics_.setBounds(again_.getX() - 112, kTop - 2, 108, 30);
     fixAll_.setBounds(lyrics_.getX() - 8 - 152, kTop - 4, 152, 34);
+    undoAll_.setBounds(w - kPad - 170, getHeight() - 34, 170, 26);
     getModel_.setBounds(w - kPad - 130, getHeight() - 44, 130, 32);
     rebuild();
 }
@@ -91,7 +103,8 @@ int WordMapView::wordCount(float below, float above) const {
 void WordMapView::rebuild() {
     boxes_.clear();
     lines_ = 0;
-    dying_ = fading_ = 0;
+    dying_ = fading_ = toFix_ = 0;
+    anyFix_ = false;
     if (!result_) return;
     const float maxWidth = static_cast<float>(wordsArea().getWidth());
     float x = 0.0f;
@@ -99,7 +112,7 @@ void WordMapView::rebuild() {
     int line = 0, inLine = 0;
     for (size_t i = 0; i < result_->words.size(); ++i) {
         const Word& w = result_->words[i];
-        const float s = w.verdict[static_cast<size_t>(device_)].score;
+        const float s = shownScore(w);
         const int weight = weightForScore(s);
         const juce::String label = w.text.empty() ? secondsToClock(w.t0) : juce::String::fromUTF8(w.text.c_str());
         const float width = juce::GlyphArrangement::getStringWidth(displayFont(weight, kFontSize), label) + 16.0f;
@@ -109,10 +122,12 @@ void WordMapView::rebuild() {
         Box b;
         b.index = static_cast<int>(i); b.line = line; b.x = x; b.w = width; b.weight = weight;
         b.label = label;
-        b.fill = s < kScoreDies ? colour::pink : (s < kScoreFades ? colour::yellow : juce::Colours::transparentBlack);
-        b.text = s < kScoreFades ? colour::ground : colour::paper;
-        b.underline = w.fix.active;
+        b.fill = s < kScoreFades ? scoreColour(s).withAlpha(0.16f) : juce::Colours::transparentBlack;
+        b.text = s < kScoreFades ? scoreColour(s) : colour::text;
+        b.underline = w.fix.active && !compare_;
         if (s < kScoreDies) ++dying_; else if (s < kScoreFades) ++fading_;
+        if (w.needsFix(device_, kScoreFades)) ++toFix_;
+        anyFix_ = anyFix_ || w.fix.active;
         boxes_.push_back(b);
         x += width + 6.0f;
         ++inLine;
@@ -136,8 +151,39 @@ int WordMapView::hitTest(juce::Point<int> p) const {
 }
 
 void WordMapView::mouseDown(const juce::MouseEvent& e) {
+    if (result_ != nullptr && phase_ == SessionPhase::Ready && overviewArea().contains(e.getPosition())) { selectAtOverview(e.x); return; }
     const int hit = hitTest(e.getPosition());
     if (hit >= 0 && onSelect) onSelect(hit);
+}
+
+void WordMapView::mouseDrag(const juce::MouseEvent& e) {
+    if (result_ != nullptr && phase_ == SessionPhase::Ready && overviewArea().contains(e.getMouseDownPosition())) selectAtOverview(e.x);
+}
+
+void WordMapView::mouseDoubleClick(const juce::MouseEvent& e) {
+    if (result_ == nullptr || phase_ != SessionPhase::Ready || !onSeek) return;
+    int hit = hitTest(e.getPosition());
+    if (hit < 0 && overviewArea().contains(e.getPosition())) hit = selected_;
+    if (hit >= 0 && hit < static_cast<int>(result_->words.size())) onSeek(result_->words[static_cast<size_t>(hit)].t0);
+}
+
+void WordMapView::selectAtOverview(int x) {
+    const auto& words = result_->words;
+    if (words.empty() || !onSelect) return;
+    const auto area = overviewArea();
+    const double seconds = juce::jlimit(0.0, 1.0, static_cast<double>(x - area.getX()) / area.getWidth()) * juce::jmax(result_->endSeconds, words.back().t1);
+    int best = 0;
+    for (int i = 1; i < static_cast<int>(words.size()); ++i)
+        if (std::abs(words[static_cast<size_t>(i)].t0 - seconds) < std::abs(words[static_cast<size_t>(best)].t0 - seconds)) best = i;
+    if (best == selected_) return;
+    onSelect(best);
+    if (best < static_cast<int>(boxes_.size())) showLine(boxes_[static_cast<size_t>(best)].line);
+    lastManualScroll_ = juce::Time::getMillisecondCounter();
+}
+
+void WordMapView::showLine(int line) {
+    const float visible = static_cast<float>(wordsArea().getHeight()) / kRowH;
+    scrollTarget_ = juce::jlimit(0.0f, juce::jmax(0.0f, static_cast<float>(lines_) - visible), static_cast<float>(line) - 1.0f);
 }
 
 void WordMapView::mouseMove(const juce::MouseEvent& e) {
@@ -166,15 +212,21 @@ void WordMapView::tick() {
     const bool changed = phase != phase_ || std::abs(progress - progress_) > 0.002f;
     phase_ = phase; progress_ = progress;
 
+    const bool compare = proc_.state().getRawParameterValue(ids::fixes)->load() < 0.5f;
+    if (compare != compare_) { compare_ = compare; rebuild(); repaint(); }
+
     const bool ready = phase == SessionPhase::Ready && result_ != nullptr;
     listen_.setVisible(phase == SessionPhase::Idle || phase == SessionPhase::Failed);
     finish_.setVisible(phase == SessionPhase::Listening && s.heardSeconds() >= 3.0);
     cancel_.setVisible(phase == SessionPhase::Listening);
     again_.setVisible(ready);
     lyrics_.setVisible(phase == SessionPhase::Idle || ready);
-    const int bad = ready ? dying_ + fading_ : 0;
-    fixAll_.setVisible(bad > 0);
-    fixAll_.setButtonText(pl("Napraw wszystkie: ") + juce::String(bad));
+    // Before the first listen the lyrics button stands next to the main button, not alone at the top.
+    if (ready) lyrics_.setBounds(again_.getX() - 112, kTop - 2, 108, 30);
+    else lyrics_.setBounds(listen_.getRight() + 12, listen_.getY() + 10, 108, 36);
+    const bool canEdit = ready && !compare_ && !proc_.isStale();
+    fixAll_.setVisible(canEdit && toFix_ > 0);
+    fixAll_.setButtonText(pl("Napraw wszystkie: ") + juce::String(toFix_));
 
     // One message at a time below the words, the most important first.
     juce::String banner, hint;
@@ -201,6 +253,7 @@ void WordMapView::tick() {
         }
     }
     getModel_.setVisible(showModel);
+    undoAll_.setVisible(canEdit && anyFix_ && !showModel);
     if (ready) getModel_.setBounds(getWidth() - kPad - 130, getHeight() - 44, 130, 32);
     else getModel_.setBounds(kPad, 340, 130, 32);
     if (banner != banner_ || hint != modelHint_) { banner_ = banner; modelHint_ = hint; repaint(); }
@@ -214,7 +267,9 @@ void WordMapView::tick() {
 
     // Follow the playhead gently unless the user scrolled a moment ago.
     int current = -1;
-    if (ready && proc_.isTransportPlaying()) {
+    // An offline render also moves the playhead, but nobody is listening along.
+    const bool following = ready && proc_.isTransportPlaying() && !proc_.isNonRealtime();
+    if (following) {
         const double t = proc_.currentSeconds();
         const auto& words = result_->words;
         const auto it = std::upper_bound(words.begin(), words.end(), t, [](double v, const Word& w) { return v < w.t0; });
@@ -224,9 +279,8 @@ void WordMapView::tick() {
         }
         if (current >= 0 && current < static_cast<int>(boxes_.size()) && juce::Time::getMillisecondCounter() - lastManualScroll_ > 4000u) {
             const float visible = static_cast<float>(wordsArea().getHeight()) / kRowH;
-            const float line = static_cast<float>(boxes_[static_cast<size_t>(current)].line);
-            if (line < scrollTarget_ + 0.2f || line > scrollTarget_ + visible - 1.8f)
-                scrollTarget_ = juce::jlimit(0.0f, juce::jmax(0.0f, static_cast<float>(lines_) - visible), line - 1.0f);
+            const int line = boxes_[static_cast<size_t>(current)].line;
+            if (static_cast<float>(line) < scrollTarget_ + 0.2f || static_cast<float>(line) > scrollTarget_ + visible - 1.8f) showLine(line);
         }
     }
     bool repaintNeeded = changed || current != current_;
@@ -238,30 +292,61 @@ void WordMapView::tick() {
         scroll_ = scrollTarget_;
     }
     if (repaintNeeded || phase == SessionPhase::Listening) repaint();
+    else if (following || wasFollowing_) repaint(overviewArea());
+    wasFollowing_ = following;
 }
 
 void WordMapView::paintMessage(juce::Graphics& g, const juce::String& title, const juce::String& body, float progress) {
-    g.setColour(colour::paper);
+    g.setColour(colour::text);
     g.setFont(displayFont(600, 34.0f));
     g.drawFittedText(title, kPad, 54, getWidth() - kPad * 2, 86, juce::Justification::topLeft, 2, 1.0f);
     g.setFont(uiFont(400, 16.0f));
-    g.setColour(colour::legend);
+    g.setColour(colour::dim);
     g.drawFittedText(body, kPad, 146, getWidth() - kPad * 2, 54, juce::Justification::topLeft, 3, 1.0f);
     if (progress >= 0.0f) {
-        const juce::Rectangle<float> bar(kPad, 222.0f, static_cast<float>(getWidth() - kPad * 2), 10.0f);
-        g.setColour(colour::track);
-        g.fillRoundedRectangle(bar, 2.0f);
-        g.setColour(colour::yellow);
-        g.fillRoundedRectangle(bar.withWidth(bar.getWidth() * juce::jlimit(0.0f, 1.0f, progress)), 2.0f);
+        const juce::Rectangle<float> bar(kPad, 222.0f, static_cast<float>(getWidth() - kPad * 2), 6.0f);
+        g.setColour(colour::hairline);
+        g.fillRoundedRectangle(bar, 3.0f);
+        g.setColour(colour::accent);
+        g.fillRoundedRectangle(bar.withWidth(bar.getWidth() * juce::jlimit(0.0f, 1.0f, progress)), 3.0f);
+    }
+}
+
+void WordMapView::paintOverview(juce::Graphics& g) {
+    // The whole song at a glance: every word is a bar, and the worse it is heard the taller it stands.
+    const auto area = overviewArea().toFloat();
+    g.setColour(colour::surface);
+    g.fillRoundedRectangle(area, 6.0f);
+    const auto& words = result_->words;
+    if (words.empty()) return;
+    const double length = juce::jmax(result_->endSeconds, words.back().t1, 1.0);
+    const auto xAt = [&](double t) { return area.getX() + 4.0f + static_cast<float>(t / length) * (area.getWidth() - 8.0f); };
+    const float floorY = area.getBottom() - 4.0f, tallest = area.getHeight() - 8.0f;
+    if (selected_ >= 0 && selected_ < static_cast<int>(words.size())) {
+        g.setColour(colour::raised);
+        const float x0 = xAt(words[static_cast<size_t>(selected_)].t0);
+        g.fillRect(juce::Rectangle<float>(x0 - 2.0f, area.getY(), juce::jmax(5.0f, xAt(words[static_cast<size_t>(selected_)].t1) - x0 + 4.0f), area.getHeight()));
+    }
+    for (const auto& w : words) {
+        const float s = shownScore(w);
+        const float h = juce::jmax(3.0f, tallest * juce::jlimit(0.0f, 1.0f, (100.0f - s) / 70.0f));
+        const float x0 = xAt(w.t0), width = juce::jmax(2.0f, xAt(w.t1) - x0 - 1.0f);
+        g.setColour(s < kScoreFades ? scoreColour(s) : colour::faint);
+        g.fillRect(x0, floorY - h, width, h);
+    }
+    if (proc_.isTransportPlaying() && !proc_.isNonRealtime()) {
+        g.setColour(colour::text);
+        g.fillRect(xAt(juce::jlimit(0.0, length, proc_.currentSeconds())) - 0.5f, area.getY(), 1.5f, area.getHeight());
     }
 }
 
 void WordMapView::paintWords(juce::Graphics& g) {
-    g.setColour(colour::paper);
-    g.setFont(displayFont(500, 20.0f));
+    g.setColour(colour::text);
+    g.setFont(displayFont(500, 19.0f));
     // The summary stops short of the first button and tightens a little when a number is long.
     const int summaryRight = (fixAll_.isVisible() ? fixAll_.getX() : lyrics_.getX()) - 10;
     g.drawFittedText(summaryText(dying_, fading_, device_), kPad, kTop, summaryRight - kPad, 28, juce::Justification::centredLeft, 1, 0.8f);
+    paintOverview(g);
     const auto area = wordsArea();
     {
         juce::Graphics::ScopedSaveState clip(g);
@@ -271,34 +356,44 @@ void WordMapView::paintWords(juce::Graphics& g) {
             if (r.getBottom() < static_cast<float>(area.getY()) - 8.0f || r.getY() > static_cast<float>(area.getBottom()) + 8.0f) continue;
             if (b.fill.getAlpha() != 0) {
                 g.setColour(b.fill);
-                g.fillPath(markerShape(r));
+                g.fillRoundedRectangle(r, 8.0f);
             } else if (b.index == hovered_) {
-                g.setColour(colour::paper.withAlpha(0.10f));
-                g.fillPath(markerShape(r));
+                g.setColour(colour::raised);
+                g.fillRoundedRectangle(r, 8.0f);
             }
             if (b.index == selected_) {
-                g.setColour(colour::paper);
-                g.strokePath(markerShape(r.expanded(2.0f)), juce::PathStrokeType(2.5f));
+                g.setColour(b.fill.getAlpha() != 0 ? b.text : colour::text);
+                g.drawRoundedRectangle(r.reduced(0.75f), 8.0f, 1.5f);
             }
             g.setColour(b.text);
             g.setFont(displayFont(b.weight, kFontSize));
             g.drawText(b.label, r.toNearestInt(), juce::Justification::centred, false);
             if (b.underline) {
-                g.setColour(colour::yellow);
-                g.fillRect(r.getX() + 8.0f, r.getBottom() - 6.0f, r.getWidth() - 16.0f, 3.0f);
+                g.setColour(colour::accent);
+                g.fillRoundedRectangle(r.getX() + 8.0f, r.getBottom() - 6.0f, r.getWidth() - 16.0f, 3.0f, 1.5f);
             }
             if (b.index == current_) {
-                g.setColour(b.fill.getAlpha() != 0 ? colour::ground : colour::paper);
-                g.fillRect(r.getX() + 8.0f, r.getBottom() - 2.0f, r.getWidth() - 16.0f, 2.0f);
+                g.setColour(colour::text);
+                g.fillRoundedRectangle(r.getCentreX() - 3.0f, r.getBottom() + 1.0f, 6.0f, 3.0f, 1.5f);
             }
         }
+    }
+    // Rows melt into the background at the edges instead of being cut in half.
+    {
+        const auto left = static_cast<float>(area.getX() - 4), right = static_cast<float>(area.getRight() + 4);
+        const auto edge = [&](float from, float to) {
+            g.setGradientFill(juce::ColourGradient(colour::bg.withAlpha(0.0f), 0.0f, from, colour::bg, 0.0f, to, false));
+            g.fillRect(juce::Rectangle<float>(left, juce::jmin(from, to), right - left, std::abs(to - from)));
+        };
+        edge(static_cast<float>(area.getBottom()) - 26.0f, static_cast<float>(area.getBottom()));
+        if (scroll_ > 0.01f) edge(static_cast<float>(area.getY()) + 10.0f, static_cast<float>(area.getY()));
     }
     // A thin mark on the right edge shows there is more of the song to scroll to.
     const float visibleLines = static_cast<float>(area.getHeight()) / kRowH;
     if (static_cast<float>(lines_) > visibleLines) {
         const float trackH = static_cast<float>(area.getHeight()), barH = juce::jmax(24.0f, trackH * visibleLines / static_cast<float>(lines_));
         const float top = (trackH - barH) * juce::jlimit(0.0f, 1.0f, scroll_ / (static_cast<float>(lines_) - visibleLines));
-        g.setColour(colour::paper.withAlpha(0.35f));
+        g.setColour(colour::hairline);
         g.fillRoundedRectangle(static_cast<float>(getWidth()) - 10.0f, static_cast<float>(area.getY()) + top, 4.0f, barH, 2.0f);
     }
 
@@ -308,30 +403,29 @@ void WordMapView::paintWords(juce::Graphics& g) {
     g.setFont(uiFont(400, 13.0f));
     const auto legendItem = [&](juce::Colour c, const juce::String& text) {
         g.setColour(c);
-        g.fillPath(markerShape(juce::Rectangle<float>(static_cast<float>(x), static_cast<float>(y) + 3.0f, 18.0f, 12.0f)));
-        g.setColour(colour::legend);
+        g.fillEllipse(static_cast<float>(x), static_cast<float>(y) + 5.0f, 8.0f, 8.0f);
+        g.setColour(colour::dim);
         const int w = juce::GlyphArrangement::getStringWidthInt(uiFont(400, 13.0f), text) + 2;
-        g.drawText(text, x + 24, y, w, 18, juce::Justification::centredLeft, false);
-        x += 24 + w + 16;
+        g.drawText(text, x + 13, y, w, 18, juce::Justification::centredLeft, false);
+        x += 13 + w + 14;
     };
-    legendItem(colour::yellow, pl("słabnie"));
-    legendItem(colour::pink, pl("ginie"));
-    g.setColour(banner_.isNotEmpty() ? colour::paper : colour::legend);
-    g.drawText(banner_.isNotEmpty() ? banner_ : pl("Kliknij słowo, żeby zobaczyć naprawę."), x, y, getWidth() - x - kPad - (getModel_.isVisible() ? 140 : 0), 18, juce::Justification::centredLeft, true);
+    legendItem(colour::weak, pl("słabnie"));
+    legendItem(colour::dies, pl("ginie"));
+    g.setColour(banner_.isNotEmpty() ? colour::text : colour::dim);
+    const juce::String hint = compare_ ? pl("Słuchasz bez napraw.")
+                                       : (proc_.canSeek() ? pl("Kliknij słowo, żeby zobaczyć naprawę. Dwuklik przewija tam REAPERa.") : pl("Kliknij słowo, żeby zobaczyć naprawę."));
+    const int reserved = getModel_.isVisible() ? 140 : (undoAll_.isVisible() ? 176 : 0);
+    g.drawFittedText(banner_.isNotEmpty() ? banner_ : hint, x, y, getWidth() - x - kPad - reserved, 18, juce::Justification::centredLeft, 1, 0.85f);
 }
 
 void WordMapView::paint(juce::Graphics& g) {
-    g.fillAll(colour::ground);
-    // The squared paper of a school notebook.
-    g.setColour(colour::paper.withAlpha(0.075f));
-    for (int x = 0; x < getWidth(); x += 24) g.fillRect(x, 0, 1, getHeight());
-    for (int y = 0; y < getHeight(); y += 24) g.fillRect(0, y, getWidth(), 1);
+    g.fillAll(colour::bg);
 
     SongSession& s = proc_.session();
     const auto paintHint = [&] {
         if (modelHint_.isEmpty()) return;
         g.setFont(uiFont(400, 14.0f));
-        g.setColour(colour::legend);
+        g.setColour(colour::dim);
         g.drawFittedText(modelHint_, kPad, 288, getWidth() - kPad * 2, 44, juce::Justification::topLeft, 2, 1.0f);
     };
     switch (phase_) {

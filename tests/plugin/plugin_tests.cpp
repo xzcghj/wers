@@ -559,6 +559,10 @@ double fakeValue(void* track, const char* name) {
 void* fakeParent(void* track) { return reinterpret_cast<std::intptr_t>(track) == 1 ? reinterpret_cast<void*>(std::intptr_t{ 2 }) : nullptr; }
 bool fakeValidate(void*, void*, const char*) { return true; }
 
+void* seekProject = nullptr;
+double seekTime = -1.0;
+void fakeSeek(void* project, double time, bool, bool) { seekProject = project; seekTime = time; }
+
 class FakeReaper final : public IReaperHostApplication {
 public:
     Steinberg::tresult PLUGIN_API queryInterface(const Steinberg::TUID id, void** out) override {
@@ -572,6 +576,7 @@ public:
         if (std::strcmp(name, "GetMediaTrackInfo_Value") == 0) return reinterpret_cast<void*>(&fakeValue);
         if (std::strcmp(name, "GetParentTrack") == 0) return reinterpret_cast<void*>(&fakeParent);
         if (std::strcmp(name, "ValidatePtr2") == 0) return reinterpret_cast<void*>(&fakeValidate);
+        if (std::strcmp(name, "SetEditCurPos2") == 0) return reinterpret_cast<void*>(&fakeSeek);
         return nullptr;
     }
     void* PLUGIN_API getReaperParent(Steinberg::uint32 what) override {
@@ -610,6 +615,20 @@ TEST_CASE("REAPER: the fader of the track and of its folder are read through the
     CHECK(other.trackGainDb() == 0.0f);
     other.setIHostApplication(nullptr);
     CHECK(!other.connected());
+}
+
+TEST_CASE("REAPER: a word can move the edit cursor in its own project, a little before the word") {
+    int project = 0;
+    FakeReaper host;
+    host.project = &project;
+    ReaperBridge bridge;
+    CHECK(!bridge.seek(10.0)); // not in REAPER: nothing happens
+    bridge.setIHostApplication(&host);
+    REQUIRE(bridge.seek(10.0));
+    CHECK(seekProject == &project);
+    CHECK(seekTime == doctest::Approx(9.75));
+    REQUIRE(bridge.seek(0.1));
+    CHECK(seekTime == 0.0);
 }
 
 TEST_CASE("REAPER: a vocal instance passes the faders on to the scores and to the beat") {

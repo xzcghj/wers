@@ -19,7 +19,7 @@ private:
     WersProcessor& proc_;
     juce::RangedAudioParameter* x_, *y_;
     float lastX_ = -1.0f, lastY_ = -1.0f;
-    FlatButton gloss_{ "Gloss" }, rage_{ "Rage" }, szept_{ "Szept" }, drill_{ "Drill" };
+    FlatButton gloss_{ "Gloss", FlatButton::Style::Link }, rage_{ "Rage", FlatButton::Style::Link }, szept_{ "Szept", FlatButton::Style::Link }, drill_{ "Drill", FlatButton::Style::Link };
 };
 
 // The strip below the words in the vocal role.

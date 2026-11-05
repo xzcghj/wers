@@ -75,8 +75,10 @@ dla spółgłosek w słowie, a wynik łączy je z wagą 0,4 / 0,6. Mapowanie SII
 
 ## Interfejs
 
-Według makiety: granat, kratka, dwa zakreślacze, tekst jako główny ekran. Czcionki Bricolage Grotesque i Instrument Sans
-(OFL) wbudowane. Okno skalowalne ze stałymi proporcjami. Rola Bit i Master mają własne, prostsze widoki.
+Ciemny interfejs (zmiana na prośbę użytkownika, 2026-11-05), tekst numeru jako główny ekran. Kolor zawsze znaczy to samo:
+bursztyn słabnie, koral ginie, mięta jest czytelna lub naprawiona i oznacza główne działanie. Nad tekstem pasek całego numeru.
+Czcionki Bricolage Grotesque i Instrument Sans (OFL) wbudowane. Okno skalowalne ze stałymi proporcjami. Rola Bit i Master
+mają własne, prostsze widoki.
 
 ## Testy
 

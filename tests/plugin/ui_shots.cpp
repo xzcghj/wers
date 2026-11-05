@@ -99,6 +99,17 @@ int main(int argc, char** argv) {
             s.waitIdle();
             pump(200); e->updateNow(); pump(300); e->updateNow();
             shot(*ed, dir.getChildFile("4_fixed.png"));
+            s.fixAllBelow(kScoreFades, Device::Phone);
+            s.waitIdle();
+            pump(200); e->updateNow(); pump(300); e->updateNow();
+            shot(*ed, dir.getChildFile("4b_all_fixed.png"));
+            if (auto* fixes = p.state().getParameter(ids::fixes)) {
+                fixes->setValueNotifyingHost(0.0f);
+                pump(100); e->updateNow(); pump(100);
+                shot(*ed, dir.getChildFile("4c_compare.png"));
+                fixes->setValueNotifyingHost(1.0f);
+                pump(100); e->updateNow();
+            }
             p.group()->removeBeatStore(bs);
             p.group()->beatInstanceDelta(-1);
         }

@@ -23,23 +23,27 @@ public:
         bypass.setTooltip(pl("Przepuszcza dźwięk bez zmian, z tym samym opóźnieniem."));
     }
     void paint(juce::Graphics& g) override {
-        g.fillAll(colour::dark);
-        g.setColour(colour::paper);
-        g.setFont(displayFont(800, 32.0f));
+        g.fillAll(colour::bg);
+        g.setColour(colour::surface);
+        g.fillRect(0, 0, getWidth(), layout::headerH);
+        g.setColour(colour::hairline);
+        g.fillRect(0, layout::headerH - 1, getWidth(), 1);
+        g.setColour(colour::text);
+        g.setFont(displayFont(800, 30.0f));
         g.drawText("WERS", 28, 0, 96, layout::headerH, juce::Justification::centredLeft, false);
         if (devices.isVisible()) {
             g.setFont(uiFont(400, 14.0f));
-            g.setColour(colour::quiet);
-            g.drawText(proc.role() == Role::Master ? pl("Słucham na") : pl("Sprawdzam na"), 320, 0, 104, layout::headerH, juce::Justification::centredRight, false);
+            g.setColour(colour::dim);
+            g.drawText(proc.role() == Role::Master ? pl("Słucham na") : pl("Sprawdzam na"), 314, 0, 104, layout::headerH, juce::Justification::centredRight, false);
         }
     }
     void resized() override {
-        roles.setBounds(128, 16, roles.preferredWidth(), 44);
-        devices.setBounds(432, 16, devices.preferredWidth(), 44);
-        match.setBounds(layout::width - 24 - 136, 16, 136, 44);
-        compare.setBounds(match.getX() - 8 - 150, 16, 150, 44);
-        groupButton.setBounds(compare.getX() - 8 - 60, 16, 60, 44);
-        bypass.setBounds(groupButton.getX() - 8 - 66, 16, 66, 44);
+        constexpr int y = 19, h = 38;
+        roles.setBounds(124, y, roles.preferredWidth(), h);
+        devices.setBounds(424, y, devices.preferredWidth(), h);
+        match.setBounds(layout::width - 24 - 132, y, 132, h);
+        compare.setBounds(match.getX() - 6 - 150, y, 150, h);
+        layoutRightButtons();
         const int midH = layout::height - layout::headerH - layout::stripH;
         words.setBounds(0, layout::headerH, layout::width - layout::panelW, midH);
         panel.setBounds(layout::width - layout::panelW, layout::headerH, layout::panelW, midH);
@@ -47,6 +51,13 @@ public:
         const juce::Rectangle<int> full(0, layout::headerH, layout::width, layout::height - layout::headerH);
         beat.setBounds(full);
         master.setBounds(full);
+    }
+    // Only the vocal role has buttons further right, so elsewhere these two move to the edge.
+    void layoutRightButtons() {
+        constexpr int y = 19, h = 38;
+        const int right = proc.role() == Role::Vocal ? compare.getX() - 6 : layout::width - 24;
+        groupButton.setBounds(right - 58, y, 58, h);
+        bypass.setBounds(groupButton.getX() - 6 - 64, y, 64, h);
     }
     WersProcessor& proc;
     SegmentRow roles, devices;
@@ -82,12 +93,12 @@ public:
         cancelButton.onClick = [this] { close_(); };
     }
     void paint(juce::Graphics& g) override {
-        g.fillAll(colour::ground.withAlpha(0.97f));
-        g.setColour(colour::paper);
+        g.fillAll(colour::bg);
+        g.setColour(colour::text);
         g.setFont(displayFont(600, 30.0f));
         g.drawText(pl("Tekst numeru"), 40, 24, 500, 40, juce::Justification::centredLeft, false);
         g.setFont(uiFont(400, 15.0f));
-        g.setColour(colour::legend);
+        g.setColour(colour::dim);
         g.drawText(pl("Wklej tekst, a WERS poprawi pisownię rozpoznanych słów."), 40, 62, getWidth() - 80, 24, juce::Justification::centredLeft, false);
     }
     void resized() override {
@@ -118,6 +129,7 @@ WersEditor::WersEditor(WersProcessor& p) : juce::AudioProcessorEditor(p), proc_(
             param->endChangeGesture();
         }
         selected_ = -1;
+        proc_.shownWord = -1;
     };
     root_->compare.onClick = [this] {
         if (auto* param = proc_.state().getParameter(ids::fixes)) {
@@ -131,7 +143,9 @@ WersEditor::WersEditor(WersProcessor& p) : juce::AudioProcessorEditor(p), proc_(
         if (s.valid) proc_.applySuggestion(s);
     };
     root_->groupButton.onClick = [this] { proc_.cycleGroup(); };
-    root_->words.onSelect = [this](int i) { selected_ = i; pushResult(); };
+    selected_ = proc_.shownWord;
+    root_->words.onSelect = [this](int i) { selected_ = i; proc_.shownWord = i; pushResult(); };
+    root_->words.onSeek = [this](double seconds) { proc_.seekTo(seconds); };
     root_->words.onEditLyrics = [this] { openLyricsEditor(); };
 
     const float scale = juce::jlimit(0.6f, 1.6f, proc_.uiScale());
@@ -149,7 +163,7 @@ WersEditor::~WersEditor() {
     setLookAndFeel(nullptr);
 }
 
-void WersEditor::paint(juce::Graphics& g) { g.fillAll(colour::dark); }
+void WersEditor::paint(juce::Graphics& g) { g.fillAll(colour::bg); }
 
 void WersEditor::resized() {
     const float scale = static_cast<float>(getWidth()) / static_cast<float>(layout::width);
@@ -173,6 +187,7 @@ void WersEditor::applyRoleLayout() {
     root_->compare.setVisible(vocal);
     root_->match.setVisible(vocal);
     root_->roles.setSelected(static_cast<int>(shownRole_));
+    root_->layoutRightButtons();
     root_->repaint();
 }
 
@@ -211,6 +226,7 @@ void WersEditor::timerCallback() {
                 shownResult_ = s.result();
                 if (shownResult_ && (selected_ < 0 || selected_ >= static_cast<int>(shownResult_->words.size()))) selected_ = pickDefaultWord();
                 if (!shownResult_) selected_ = -1;
+                proc_.shownWord = selected_;
                 pushResult();
             }
             root_->words.tick();

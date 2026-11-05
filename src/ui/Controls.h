@@ -3,10 +3,10 @@
 
 namespace wers::ui {
 
-// Flat button in the colours of the design. Toggled state uses paper or yellow fill.
+// Flat button. Solid is the one thing to press, Segment lives inside a SegmentRow.
 class FlatButton : public juce::Button {
 public:
-    enum class Style { Outline, Solid, OnPaper, OnPaperOutline, Link };
+    enum class Style { Outline, Solid, Segment, Link };
     explicit FlatButton(const juce::String& text, Style style = Style::Outline, bool accentWhenOn = false);
     void setStyle(Style s) { style_ = s; repaint(); }
     void setTextSize(float s) { textSize_ = s; repaint(); }
@@ -26,6 +26,7 @@ public:
     int selected() const { return selected_; }
     int preferredWidth() const;
     void resized() override;
+    void paint(juce::Graphics&) override;
 private:
     juce::OwnedArray<FlatButton> buttons_;
     std::vector<int> widths_;

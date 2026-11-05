@@ -327,6 +327,33 @@ TEST_CASE("session: fix and undo update result and plan") {
     s.attachLink(nullptr, -1);
 }
 
+TEST_CASE("session: fix all leaves nothing to press again, and undo all brings it back") {
+    Rig r;
+    SongSession s;
+    s.attachLink(&r.group, r.slot);
+    s.setStores(r.vs, nullptr);
+    s.setLyrics("wstaje gdy miasto spi");
+    r.play(s, 5.0, -24, -12);
+    s.waitIdle();
+    const auto toFix = [&] {
+        int n = 0;
+        for (const auto& w : s.result()->words) if (w.needsFix(Device::Phone, kScoreFades)) ++n;
+        return n;
+    };
+    const int before = toFix();
+    REQUIRE(before > 0);
+    s.fixAllBelow(kScoreFades, Device::Phone);
+    s.waitIdle();
+    CHECK(toFix() == 0); // also the words that stayed weak after their fix, or that no small fix can help
+    int fixed = 0;
+    for (const auto& w : s.result()->words) if (w.fix.active) ++fixed;
+    CHECK(fixed > 0);
+    s.clearAllFixes();
+    s.waitIdle();
+    CHECK(toFix() == before);
+    s.attachLink(nullptr, -1);
+}
+
 TEST_CASE("session: a preview does not outlive the result it was made from") {
     Rig r;
     SongSession s;

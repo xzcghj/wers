@@ -468,6 +468,7 @@ void SongSession::rescoreAll() {
     auto words = old->words;
     for (auto& w : words) {
         if (stop_.load()) return;
+        w.fix.tried = false; // a new balance may leave room for a fix that did not help before
         scoreAllDevices(*frames, w, mix);
     }
     publish(std::move(words), old->hasText, old->hasBeat, old->endSeconds, old->lufs, old->textFailed);
@@ -529,8 +530,10 @@ void SongSession::fixAllBelow(float threshold, Device target) {
         for (auto& w : words) {
             if (stop_.load()) return;
             ++done;
-            if (w.fix.active || w.verdict[static_cast<size_t>(target)].score >= threshold) continue;
+            if (!w.needsFix(target, threshold)) continue;
             w.fix = planFix(*frames, w, target, mix, lim);
+            w.fix.target = target;
+            w.fix.tried = !w.fix.active;
             scoreAllDevices(*frames, w, mix);
             progress_.store(static_cast<float>(done) / static_cast<float>(words.size()));
         }
