@@ -40,4 +40,60 @@ inline std::vector<float> glideVoice(double f0From, double f0To, double db, int 
     return x;
 }
 
+struct Formant {
+    double hz, bandwidth;
+};
+
+inline const std::vector<Formant> kVowelI{ { 280.0, 60.0 }, { 2250.0, 90.0 }, { 2900.0, 120.0 } };
+inline const std::vector<Formant> kVowelU{ { 320.0, 60.0 }, { 870.0, 70.0 }, { 2250.0, 110.0 } };
+inline const std::vector<Formant> kVowelY{ { 400.0, 60.0 }, { 1600.0, 90.0 }, { 2500.0, 120.0 } };
+inline const std::vector<Formant> kVowelE{ { 420.0, 60.0 }, { 2000.0, 90.0 }, { 2600.0, 120.0 } };
+inline const std::vector<Formant> kVowelO{ { 500.0, 70.0 }, { 880.0, 70.0 }, { 2500.0, 120.0 } };
+inline const std::vector<Formant> kVowelA{ { 700.0, 90.0 }, { 1100.0, 90.0 }, { 2500.0, 120.0 } };
+
+// A voice built the way a throat builds it: glottal pulses through resonances. Close vowels at some pitches put a
+// resonance right on the second harmonic, which then repeats every half period. weakPulse makes every second pulse
+// that much weaker, as in a creaky voice. pitchHz moves by 1% three times a second.
+inline std::vector<float> throatVoice(double pitchHz, const std::vector<Formant>& formants, int n, double fs, double lowCutHz = 0.0, double weakPulse = 1.0) {
+    struct Resonance {
+        double a, b, c, y1 = 0.0, y2 = 0.0;
+        double tick(double x) {
+            const double y = a * x + b * y1 + c * y2;
+            y2 = y1;
+            y1 = y;
+            return y;
+        }
+    };
+    std::vector<Resonance> resonances;
+    for (const auto& f : formants) {
+        const double r = std::exp(-wers::kPi * f.bandwidth / fs);
+        const double b = 2.0 * r * std::cos(2.0 * wers::kPi * f.hz / fs), c = -r * r;
+        resonances.push_back({ 1.0 - b - c, b, c });
+    }
+    constexpr double kOpen = 0.6, kRise = 0.7 * kOpen;
+    std::vector<float> x(static_cast<size_t>(n), 0.0f);
+    wers::Svf cutA, cutB;
+    cutA.set(std::max(lowCutHz, 1.0), 0.7071, fs);
+    cutB.set(std::max(lowCutHz, 1.0), 0.7071, fs);
+    double place = 0.0, last = 0.0, peak = 0.0;
+    bool weak = false;
+    for (int i = 0; i < n; ++i) {
+        place += pitchHz * (1.0 + 0.01 * std::sin(2.0 * wers::kPi * 3.0 * i / fs)) / fs;
+        if (place >= 1.0) {
+            place -= 1.0;
+            weak = !weak;
+        }
+        const double opening = place < kRise ? 0.5 - 0.5 * std::cos(wers::kPi * place / kRise) : place < kOpen ? std::cos(0.5 * wers::kPi * (place - kRise) / (kOpen - kRise)) : 0.0;
+        const double glottis = opening * (weak ? weakPulse : 1.0);
+        double v = glottis - last; // the lips
+        last = glottis;
+        for (auto& r : resonances) v = r.tick(v);
+        if (lowCutHz > 0.0) v = cutB.tick(cutA.tick(v).hp).hp;
+        x[static_cast<size_t>(i)] = static_cast<float>(v);
+        peak = std::max(peak, std::abs(v));
+    }
+    for (auto& v : x) v = static_cast<float>(v * 0.25 / peak);
+    return x;
+}
+
 } // namespace refren::test

@@ -40,6 +40,7 @@ public:
 private:
     static constexpr int kMarks = 64;
     void analyse() noexcept;
+    int periodAmongDips(const float* oldest, int classicChoice, int deepest) noexcept;
     float refinedPeriod(float period) noexcept;
     void placeMarks() noexcept;
     int64_t peakNear(int64_t place, float period) const noexcept;
@@ -51,7 +52,9 @@ private:
     int64_t ringMask_ = 0, now_ = 0, nextMarkAt_ = 0, lastMark_ = 0, newestReadingTime_ = 0;
     std::vector<float> ring_, lowRing_, smoothRing_, refine_;
     int refineWindow_ = 640, readingLagOfWindow_ = 640;
-    std::vector<float> decimated_, difference_; // decimated_ is written twice, so a window is always contiguous
+    std::vector<float> decimated_, difference_, highs_; // decimated_ is written twice, so a window is always contiguous
+    int lastTau_ = 0, voicedHops_ = 0; // the period of the last reading, at the low rate, while the voice goes on
+    float usualOctaves_ = 0.0f; // where the voice usually is, as the logarithm of that period
     int decimatedSize_ = 0, decimatedPos_ = 0, decimateCount_ = 0, hopCount_ = 0;
     std::array<wers::Biquad, 2> antiAlias_{};
     wers::Biquad markFilter_;

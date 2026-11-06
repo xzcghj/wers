@@ -10,7 +10,14 @@ constexpr double kMarkFilterHz = 1200.0, kLevelSeconds = 0.005;
 constexpr double kAntiAliasShare = 0.42; // of the new Nyquist frequency
 constexpr double kQ1 = 0.54119610014619698, kQ2 = 1.3065629648763766; // fourth-order Butterworth
 constexpr float kDipThreshold = 0.15f, kVoicedConfidence = 0.5f, kInputLimit = 64.0f;
-constexpr float kCreakMargin = 0.25f;
+constexpr float kDipMargin = 0.25f; // how far above the deepest dip another one can still be the period
+// How much worse than the best dip the highs of a dip may repeat for it to be the period. Without any memory of the
+// voice a dip must do well. What the voice has just been doing may do a lot worse, so a creaky stretch stays where it
+// is, and anything else has to do as well as the best, so a resonance does not move the reading. With highs this
+// poor, they say nothing.
+constexpr float kHighsWithoutMemory = 0.25f, kHighsRemembered = 0.8f, kHighsOther = 0.05f, kHighsSayNothing = 0.6f;
+constexpr float kOtherDipMargin = 0.05f; // a dip that is not the remembered one is no less clean than it
+constexpr float kUsualStepOctaves = 0.0025f, kUsualRangeOctaves = 0.5f; // one octave takes a second of voice
 constexpr double kRefineSeconds = 0.0133;
 constexpr int kRefineLongest = 1024; // keeps the work at the highest sample rates within reason
 constexpr double kQuietPower = 1.0e-7; // -70 dBFS
@@ -82,6 +89,7 @@ void VoiceAnalysis::prepare(double fs) {
     decimatedSize_ = window_ + tauMax_ + 2;
     decimated_.assign(static_cast<size_t>(decimatedSize_) * 2, 0.0f);
     difference_.assign(static_cast<size_t>(tauMax_) + 2, 0.0f);
+    highs_.assign(static_cast<size_t>(window_ + tauMax_), 0.0f);
     // The centre of the window, and two more readings for the two neighbours a settled reading waits for.
     readingLagOfWindow_ = (window_ + tauMax_) * decimation_ / 2;
     readingLag_ = readingLagOfWindow_ + 2 * hopSamples_;
@@ -118,6 +126,8 @@ void VoiceAnalysis::reset() noexcept {
     decimatedPos_ = decimateCount_ = hopCount_ = readingPos_ = readingCount_ = markPos_ = markCount_ = 0;
     chain_ = false;
     power_ = 0.0;
+    lastTau_ = voicedHops_ = 0;
+    usualOctaves_ = 0.0f;
     for (auto& f : antiAlias_) f.reset();
     markFilter_.reset();
 }
@@ -165,7 +175,10 @@ void VoiceAnalysis::analyse() noexcept {
             running += d;
             difference_[static_cast<size_t>(tau)] = running > 0.0f ? d * static_cast<float>(tau) / running : 1.0f;
         }
-        int best = 0;
+        int deepest = tauMin_;
+        for (int tau = tauMin_; tau < tauMax_; ++tau)
+            if (difference_[static_cast<size_t>(tau)] < difference_[static_cast<size_t>(deepest)]) deepest = tau;
+        int best = deepest;
         for (int tau = tauMin_; tau < tauMax_; ++tau) {
             if (difference_[static_cast<size_t>(tau)] < kDipThreshold) {
                 while (tau + 1 < tauMax_ && difference_[static_cast<size_t>(tau + 1)] < difference_[static_cast<size_t>(tau)]) ++tau;
@@ -173,33 +186,111 @@ void VoiceAnalysis::analyse() noexcept {
                 break;
             }
         }
-        if (best == 0) {
-            best = tauMin_;
-            for (int tau = tauMin_; tau < tauMax_; ++tau)
-                if (difference_[static_cast<size_t>(tau)] < difference_[static_cast<size_t>(best)]) best = tau;
-        }
-        // A creaky voice repeats exactly only every two periods, but what is heard is the pitch of its pulses.
-        while (best / 2 >= tauMin_) {
-            int half = best / 2;
-            if (difference_[static_cast<size_t>(half + 1)] < difference_[static_cast<size_t>(half)]) ++half;
-            else if (half > tauMin_ && difference_[static_cast<size_t>(half - 1)] < difference_[static_cast<size_t>(half)]) --half;
-            const bool isDip = difference_[static_cast<size_t>(half)] <= difference_[static_cast<size_t>(half - 1)] && difference_[static_cast<size_t>(half)] <= difference_[static_cast<size_t>(half + 1)];
-            if (!isDip || difference_[static_cast<size_t>(half)] >= difference_[static_cast<size_t>(best)] + kCreakMargin) break;
-            best = half;
-        }
+        best = periodAmongDips(oldest, best, deepest);
         const float before = difference_[static_cast<size_t>(best - 1)], at = difference_[static_cast<size_t>(best)], after = difference_[static_cast<size_t>(best + 1)];
         const float curve = before - 2.0f * at + after;
         const float shift = curve > 1.0e-9f ? std::clamp(0.5f * (before - after) / curve, -1.0f, 1.0f) : 0.0f;
-        reading.confidence = std::clamp(1.0f - at, 0.0f, 1.0f);
+        // Whichever dip is the period, the deepest one says how well the sound repeats at all.
+        reading.confidence = std::clamp(1.0f - difference_[static_cast<size_t>(deepest)], 0.0f, 1.0f);
         reading.voiced = reading.confidence >= kVoicedConfidence;
         reading.period = reading.voiced ? refinedPeriod((static_cast<float>(best) + shift) * static_cast<float>(decimation_)) : (static_cast<float>(best) + shift) * static_cast<float>(decimation_);
     }
     std::rotate(raw_.begin(), raw_.begin() + 1, raw_.end());
     raw_.back() = reading;
-    readings_[static_cast<size_t>(readingPos_)] = settledReading(raw_);
+    const PitchReading settled = settledReading(raw_);
+    readings_[static_cast<size_t>(readingPos_)] = settled;
+    // A voice is worth remembering once it fills the whole comparison, because at its start the curve sees only a part.
+    voicedHops_ = settled.voiced ? voicedHops_ + 1 : 0;
+    lastTau_ = 0;
+    if (voicedHops_ * hopDecimated_ > window_ + tauMax_) {
+        lastTau_ = static_cast<int>(std::lround(settled.period / static_cast<float>(decimation_)));
+        const float octaves = std::log2(static_cast<float>(lastTau_));
+        usualOctaves_ = usualOctaves_ <= 0.0f ? octaves : usualOctaves_ + std::clamp(octaves - usualOctaves_, -kUsualStepOctaves, kUsualStepOctaves);
+    }
     readingPos_ = (readingPos_ + 1) % static_cast<int>(readings_.size());
     readingCount_ = std::min(readingCount_ + 1, static_cast<int>(readings_.size()));
     newestReadingTime_ = now_ - readingLag_;
+}
+
+int VoiceAnalysis::periodAmongDips(const float* oldest, int classicChoice, int deepest) noexcept {
+    // A resonance on a low harmonic makes the sound repeat at a fraction of its period, and a creaky voice makes it
+    // repeat exactly only every second period. Both look alike in this curve. The highs tell them apart: what the
+    // glottis excites up there rings out within one period, so it comes back with the true period and only then,
+    // while the pulses of a creaky voice bring it back each time.
+    constexpr int kMostDips = 12;
+    const float limit = difference_[static_cast<size_t>(deepest)] + kDipMargin;
+    std::array<int, kMostDips> dips{};
+    int count = 0;
+    bool hasDeepest = false;
+    for (int tau = tauMin_; tau < tauMax_; ++tau) {
+        const float at = difference_[static_cast<size_t>(tau)];
+        if (at >= limit || at > difference_[static_cast<size_t>(tau - 1)] || at > difference_[static_cast<size_t>(tau + 1)]) continue;
+        if (count == kMostDips) {
+            if (hasDeepest) break;
+            if (tau != deepest) continue;
+            count = kMostDips - 1;
+        }
+        dips[static_cast<size_t>(count++)] = tau;
+        hasDeepest = hasDeepest || tau == deepest;
+    }
+    if (count < 2) return classicChoice;
+
+    const int last = window_ + tauMax_ - 1;
+    for (int i = 0; i < last; ++i) highs_[static_cast<size_t>(i)] = oldest[i - 1] - 2.0f * oldest[i] + oldest[i + 1];
+    const float* middle = highs_.data() + tauMax_ / 2;
+    std::array<float, kMostDips> highs{};
+    float bestHighs = 1.0e9f;
+    for (int k = 0; k < count; ++k) {
+        const int tau = dips[static_cast<size_t>(k)];
+        const float* a = middle - tau / 2;
+        const float* b = a + tau;
+        float power = 0.0f;
+        for (int i = 0; i < window_; ++i) power += a[i] * a[i] + b[i] * b[i];
+        // 0 when they are the same, 1 when they have nothing to do with each other.
+        highs[static_cast<size_t>(k)] = power > 0.0f ? squaredDifference(a, b, window_) / power : 1.0f;
+        bestHighs = std::min(bestHighs, highs[static_cast<size_t>(k)]);
+    }
+
+    const auto worse = [&](int k) { return highs[static_cast<size_t>(k)] - bestHighs; };
+    const auto nearest = [&](float wanted) {
+        int found = 0;
+        for (int k = 1; k < count; ++k)
+            if (std::abs(std::log2(static_cast<float>(dips[static_cast<size_t>(k)]) / wanted)) < std::abs(std::log2(static_cast<float>(dips[static_cast<size_t>(found)]) / wanted))) found = k;
+        return found;
+    };
+    // What the voice was just doing, or else where it usually is.
+    int kept = -1;
+    if (lastTau_ > 0) {
+        const int k = nearest(static_cast<float>(lastTau_));
+        if (std::abs(dips[static_cast<size_t>(k)] - lastTau_) * 5 <= lastTau_) kept = k;
+    }
+    if (kept < 0 && usualOctaves_ > 0.0f) {
+        const int k = nearest(std::pow(2.0f, usualOctaves_));
+        if (std::abs(std::log2(static_cast<float>(dips[static_cast<size_t>(k)])) - usualOctaves_) <= kUsualRangeOctaves) kept = k;
+    }
+    if (bestHighs >= kHighsSayNothing) return kept >= 0 ? dips[static_cast<size_t>(kept)] : classicChoice;
+
+    if (kept < 0) {
+        // Nothing to go by but the sound. From the classic choice on, the first whose highs come back too, and then
+        // its half, for a creaky voice.
+        int chosen = 0;
+        while (chosen < count - 1 && dips[static_cast<size_t>(chosen)] < classicChoice) ++chosen;
+        while (chosen < count - 1 && worse(chosen) > kHighsWithoutMemory) ++chosen;
+        for (int k = chosen - 1; k >= 0; --k) {
+            if (std::abs(2 * dips[static_cast<size_t>(k)] - dips[static_cast<size_t>(chosen)]) * 20 <= dips[static_cast<size_t>(chosen)] && worse(k) <= kHighsWithoutMemory) chosen = k;
+        }
+        return dips[static_cast<size_t>(chosen)];
+    }
+    const int keptTau = dips[static_cast<size_t>(kept)];
+    // A voice leaps up by an octave and not by any other step, and only when its highs and all the rest come back there.
+    for (int k = 0; k < kept; ++k) {
+        const int tau = dips[static_cast<size_t>(k)];
+        if (std::abs(2 * tau - keptTau) * 5 <= keptTau && worse(k) <= kHighsOther && difference_[static_cast<size_t>(tau)] <= difference_[static_cast<size_t>(keptTau)] + kOtherDipMargin) return tau;
+    }
+    if (worse(kept) <= kHighsRemembered) return keptTau;
+    for (int k = kept + 1; k < count; ++k)
+        if (worse(k) <= kHighsOther) return dips[static_cast<size_t>(k)];
+    return classicChoice;
 }
 
 float VoiceAnalysis::refinedPeriod(float period) noexcept {
