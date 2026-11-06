@@ -7,13 +7,10 @@
 
 using namespace wers;
 using namespace wers::test;
-using barwa::Character;
-using barwa::CharacterShaper;
 
 namespace {
 
 constexpr std::array<Character, 4> kCharacters{ Character::Lamp, Character::Tape, Character::Transformer, Character::Transistor };
-constexpr std::array<double, 6> kRates{ 44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0 };
 
 // A sine through oversampling and the shaper, without level matching and without the part where filters settle.
 std::vector<float> runShaped(Character character, double hz, double inDb, double driveDb, double fs, int qualityLog2) {

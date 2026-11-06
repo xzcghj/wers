@@ -1,12 +1,11 @@
 #include "MeasureSong.h"
 #include "BarwaEngine.h"
+#include "ListedAudio.h"
 #include "TestSignals.h"
-#include "WavIO.h"
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
-#include <iterator>
 
 namespace barwa {
 
@@ -129,44 +128,16 @@ SongResult measureSong(const std::vector<float>& mono, double fs) {
 
 int measureList(const std::u8string& listPath, const std::u8string& outPath) {
     namespace fs = std::filesystem;
-    std::ifstream list(fs::path(listPath), std::ios::binary);
     std::ofstream out(fs::path(outPath), std::ios::binary);
-    if (!list || !out) return 0;
+    if (!out) return 0;
     out << "index\tseconds\tsibFrames\tvowelFrames\tsibDropDb\tvowelDropDb\tsibLevelDb\tvowelLevelDb\tlevelDiffDb\tpeakDiffDb\n";
-    int index = 0, measured = 0;
-    std::string line;
-    while (std::getline(list, line)) {
-        if (index == 0 && line.rfind("\xEF\xBB\xBF", 0) == 0) line.erase(0, 3);
-        while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
-        if (line.empty()) continue;
-        ++index;
-        SongResult result;
-        try {
-            // On Windows a line that is not valid UTF-8 throws here, and it still gets its row.
-            std::ifstream file(fs::path(std::u8string(reinterpret_cast<const char8_t*>(line.data()), line.size())), std::ios::binary);
-            if (file) {
-                std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-                wers::wav::Audio audio;
-                if (wers::wav::readBytes(bytes, audio) && !audio.ch.empty() && !audio.ch[0].empty()) {
-                    bytes.clear();
-                    bytes.shrink_to_fit();
-                    std::vector<float> mono(audio.ch[0].size(), 0.0f);
-                    const float share = 1.0f / static_cast<float>(audio.ch.size());
-                    for (const auto& channel : audio.ch)
-                        for (size_t i = 0; i < mono.size(); ++i) mono[i] += channel[i] * share;
-                    result = measureSong(mono, static_cast<double>(audio.rate));
-                    ++measured;
-                }
-            }
-        } catch (const std::exception&) {
-            result = SongResult{};
-        }
+    return wers::test::forEachListedFile(listPath, [&](int index, const std::vector<float>* mono, int rate) {
+        const SongResult result = mono != nullptr ? measureSong(*mono, static_cast<double>(rate)) : SongResult{};
         char row[256];
         std::snprintf(row, sizeof(row), "%d\t%.2f\t%d\t%d\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\n", index, result.seconds, result.sibFrames, result.vowelFrames,
                       result.sibDropDb, result.vowelDropDb, result.sibLevelDb, result.vowelLevelDb, result.levelDiffDb, result.peakDiffDb);
         out << row;
-    }
-    return measured;
+    });
 }
 
 std::vector<double> measureCpu(double seconds) {

@@ -6,9 +6,16 @@
 #include "LevelMatch.h"
 #include "Oversampler.h"
 #include "PhonemeClassifier.h"
+#include "Smoothing.h"
+#include "Tone.h"
 #include <atomic>
 
 namespace barwa {
+
+using wers::Character;
+using wers::CharacterShaper;
+using wers::DcBlock;
+using wers::Tilt;
 
 struct BandParams {
     Character character = Character::Lamp;
@@ -28,35 +35,6 @@ struct BarwaParams {
     bool autoLevel = true, delta = false;
 };
 
-// Takes the offset of asymmetric curves out of what is added.
-class DcBlock {
-public:
-    void prepare(double fs) noexcept;
-    void reset() noexcept { in_ = out_ = 0.0; }
-    double tick(double x) noexcept {
-        out_ = gain_ * (x - in_) + pole_ * out_;
-        in_ = x;
-        return out_;
-    }
-private:
-    double pole_ = 0.998, gain_ = 0.999, in_ = 0.0, out_ = 0.0;
-};
-
-// Tilts what is added around 1 kHz, up to 6 dB each way. At zero it changes nothing.
-class Tilt {
-public:
-    void prepare(double fs) noexcept;
-    void reset() noexcept { state_ = 0.0; }
-    void set(float tone) noexcept;
-    double tick(double x) noexcept {
-        const double y = b0_ * x + state_;
-        state_ = b1_ * x - a1_ * y;
-        return y;
-    }
-private:
-    double warp_ = 0.07, b0_ = 1.0, b1_ = 0.0, a1_ = 0.0, state_ = 0.0;
-};
-
 class BarwaEngine {
 public:
     void prepare(double fs, int qualityLog2);
@@ -67,21 +45,8 @@ public:
     // How much of the added colour goes through right now, 0 to 1. Safe to read from any thread.
     float maskNow() const noexcept { return maskNow_.load(std::memory_order_relaxed); }
 private:
-    // A value that changes in a straight line between two control points.
-    struct Ramp {
-        float now = 0.0f, end = 0.0f, step = 0.0f;
-        void set(float value) noexcept { now = end = value; step = 0.0f; }
-        void aim(float next, float perSample) noexcept { now = end; end = next; step = (next - now) * perSample; }
-    };
-    // Closes before a change that cannot be smoothed, waits for the filters to settle and opens again.
-    struct Gate {
-        enum class Phase { Open, Closing, Settling, Opening };
-        Phase phase = Phase::Open;
-        float level = 1.0f;
-        int wait = 0;
-        bool advance(bool changeWanted, float step, int settleTicks) noexcept;
-        void openNow() noexcept { phase = Phase::Open; level = 1.0f; wait = 0; }
-    };
+    using Ramp = wers::Ramp;
+    using Gate = wers::Gate;
     struct BandAudio {
         wers::Oversampler oversampler;
         CharacterShaper shaper;

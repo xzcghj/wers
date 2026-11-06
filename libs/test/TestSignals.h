@@ -135,6 +135,27 @@ inline double toneDb(const float* x, int n, double f, double fs) {
 
 inline void append(std::vector<float>& a, const std::vector<float>& b) { a.insert(a.end(), b.begin(), b.end()); }
 
+// Vowels and sibilants in turn, with the place of each transition.
+struct Syllables {
+    std::vector<float> signal;
+    std::vector<std::pair<int, int>> vowels, sibilants;
+};
+
+inline Syllables makeSyllables(double fs, int rounds, double vowelDb = -18.0, double sibilantDb = -26.0) {
+    Syllables s;
+    const int vowelLength = static_cast<int>(fs * 0.4), sibilantLength = static_cast<int>(fs * 0.2);
+    const auto v = vowel(150.0, vowelDb, vowelLength, fs);
+    const auto n = bandNoise(4000.0, 9000.0, sibilantDb, sibilantLength, fs);
+    for (int i = 0; i < rounds; ++i) {
+        const int start = static_cast<int>(s.signal.size());
+        append(s.signal, v);
+        s.vowels.emplace_back(start, start + vowelLength);
+        append(s.signal, n);
+        s.sibilants.emplace_back(start + vowelLength, start + vowelLength + sibilantLength);
+    }
+    return s;
+}
+
 // Runs a mono buffer through a stereo-capable processor in blocks of a chosen size.
 template <typename Fn>
 void inBlocks(std::vector<float>& x, int block, Fn&& fn) {

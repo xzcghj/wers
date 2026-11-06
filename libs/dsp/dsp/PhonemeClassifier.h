@@ -13,6 +13,12 @@ struct Memberships {
     float highDb = -120.0f;      // level in the sibilant band
 };
 
+// How much a sound counts as voice for what follows the voice. The classifier calls a forward, bright voice
+// only partly a vowel, which is no reason to treat it differently, so 0.75 already counts as a whole vowel.
+inline float voicedShare(const Memberships& m, float stopShare) noexcept {
+    return std::clamp(m.vowel / 0.75f + stopShare * m.stop, 0.0f, 1.0f);
+}
+
 class PhonemeClassifier {
 public:
     void prepare(double fs);

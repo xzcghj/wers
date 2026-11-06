@@ -1,4 +1,5 @@
 #include "doctest.h"
+#include "AllocationCount.h"
 #include "BarwaEngine.h"
 #include "Fft.h"
 #include "Measure.h"
@@ -20,24 +21,12 @@ using namespace wers;
 using namespace wers::test;
 using namespace barwa;
 
-static std::atomic<bool> gCounting{ false };
-static std::atomic<long> gAllocations{ 0 };
-void* operator new(std::size_t n) {
-    if (gCounting.load(std::memory_order_relaxed)) gAllocations.fetch_add(1);
-    if (void* p = std::malloc(n ? n : 1)) return p;
-    throw std::bad_alloc();
-}
-void* operator new[](std::size_t n) { return operator new(n); }
-void operator delete(void* p) noexcept { std::free(p); }
-void operator delete[](void* p) noexcept { std::free(p); }
-void operator delete(void* p, std::size_t) noexcept { std::free(p); }
-void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
+WERS_COUNT_ALLOCATIONS()
 
 namespace {
 
 constexpr double kFs = 48000.0;
 constexpr std::array<Character, 4> kCharacters{ Character::Lamp, Character::Tape, Character::Transformer, Character::Transistor };
-constexpr std::array<double, 6> kRates{ 44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0 };
 
 // A plain starting point. The real default of the mask comes from the track name, so tests set it themselves.
 BarwaParams plain(float driveDb = 0.0f, int bands = 1) {
@@ -66,16 +55,6 @@ std::vector<float> run(const std::vector<float>& x, const BarwaParams& p, double
     return runThrough(engine, x, block);
 }
 
-double errorAgainstDelayDb(const std::vector<float>& x, const std::vector<float>& y, int latency, int from = 0) {
-    double error = 0.0, signal = 0.0;
-    for (size_t i = static_cast<size_t>(latency + from); i < y.size(); ++i) {
-        const double d = static_cast<double>(y[i]) - x[i - static_cast<size_t>(latency)];
-        error += d * d;
-        signal += static_cast<double>(x[i - static_cast<size_t>(latency)]) * x[i - static_cast<size_t>(latency)];
-    }
-    return error <= 0.0 ? -400.0 : 10.0 * std::log10(error / signal);
-}
-
 // The worst distance from 0 dB in the band, from the impulse response of the whole engine.
 double flatnessDb(const BarwaParams& p, double fs, int quality = 2) {
     constexpr int kSize = 65536;
@@ -91,23 +70,6 @@ double flatnessDb(const BarwaParams& p, double fs, int quality = 2) {
         if (hz >= 20.0 && hz <= 20000.0) worst = std::max(worst, std::abs(20.0 * std::log10(std::abs(h[static_cast<size_t>(bin)]) + 1e-20)));
     }
     return worst;
-}
-
-double worstJump(const std::vector<float>& y, int from, int to) {
-    float worst = 0.0f;
-    for (int i = std::max(1, from); i < to; ++i) worst = std::max(worst, std::abs(y[static_cast<size_t>(i)] - y[static_cast<size_t>(i - 1)]));
-    return static_cast<double>(worst);
-}
-
-double weightedDb(const std::vector<float>& x, int from, int to, double fs = kFs) {
-    KWeighting weight;
-    weight.prepare(fs);
-    double energy = 0.0;
-    for (int i = 0; i < to; ++i) {
-        const double v = weight.tick(static_cast<double>(x[static_cast<size_t>(i)]));
-        if (i >= from) energy += v * v;
-    }
-    return 10.0 * std::log10(energy / (to - from) + 1e-30);
 }
 
 } // namespace
@@ -142,29 +104,16 @@ TEST_CASE("latency matches quality") {
 }
 
 TEST_CASE("same result in any block size") {
-    const auto x = loudPhrase(kFs, 8.0, -3.0);
     auto p = plain(12.0f, 3);
     p.mask = 1.0f;
     p.autoLevel = true;
     p.tone = 0.3f;
-    const auto reference = run(x, p, kFs, 2, 32);
-    for (int block : { 256, 4096 }) {
-        CAPTURE(block);
-        const auto y = run(x, p, kFs, 2, block);
-        CHECK(std::memcmp(y.data(), reference.data(), y.size() * sizeof(float)) == 0);
-    }
-    BarwaEngine engine;
-    engine.prepare(kFs, 2);
-    engine.setParams(p);
-    std::vector<float> y = x;
-    std::mt19937 random(7);
-    for (size_t from = 0; from < y.size();) {
-        const int n = std::min(static_cast<int>(random() % 700) + 1, static_cast<int>(y.size() - from));
-        float* channels[] = { y.data() + from };
-        engine.process(channels, 1, n);
-        from += static_cast<size_t>(n);
-    }
-    CHECK(std::memcmp(y.data(), reference.data(), y.size() * sizeof(float)) == 0);
+    CHECK(sameInAnyBlockSize({ loudPhrase(kFs, 8.0, -3.0) }, [&] {
+        auto engine = std::make_shared<BarwaEngine>();
+        engine->prepare(kFs, 2);
+        engine->setParams(p);
+        return [engine](float* const* channels, int count, int n) { engine->process(channels, count, n); };
+    }));
 }
 
 TEST_CASE("works at every sample rate") {
@@ -211,38 +160,6 @@ TEST_CASE("auto level holds loudness") {
         }
     }
 }
-
-namespace {
-
-// Vowels and sibilants in turn, with the place of each transition.
-struct Syllables {
-    std::vector<float> signal;
-    std::vector<std::pair<int, int>> vowels, sibilants;
-};
-
-Syllables makeSyllables(double fs, int rounds, double vowelDb = -18.0, double sibilantDb = -26.0) {
-    Syllables s;
-    const int vowelLength = static_cast<int>(fs * 0.4), sibilantLength = static_cast<int>(fs * 0.2);
-    const auto v = vowel(150.0, vowelDb, vowelLength, fs);
-    const auto n = bandNoise(4000.0, 9000.0, sibilantDb, sibilantLength, fs);
-    for (int i = 0; i < rounds; ++i) {
-        const int start = static_cast<int>(s.signal.size());
-        append(s.signal, v);
-        s.vowels.emplace_back(start, start + vowelLength);
-        append(s.signal, n);
-        s.sibilants.emplace_back(start + vowelLength, start + vowelLength + sibilantLength);
-    }
-    return s;
-}
-
-double zoneEnergy(const std::vector<float>& y, const std::vector<std::pair<int, int>>& zones, int skip, int late) {
-    double energy = 0.0;
-    for (const auto& [from, to] : zones)
-        for (int i = from + skip + late; i < std::min(to + late, static_cast<int>(y.size())); ++i) energy += static_cast<double>(y[static_cast<size_t>(i)]) * y[static_cast<size_t>(i)];
-    return energy;
-}
-
-} // namespace
 
 TEST_CASE("mask spares sibilants") {
     const auto s = makeSyllables(kFs, 8);
@@ -827,8 +744,7 @@ TEST_CASE("audio thread never allocates") {
     auto p = plain(12.0f, 3);
     p.mask = 1.0f;
     p.autoLevel = true;
-    gAllocations = 0;
-    gCounting = true;
+    AllocationCounter counter;
     for (size_t from = 0; from + 256 <= left.size(); from += 256) {
         p.band[0].character = kCharacters[(from / 256 / 40) % 4];
         p.bands = 1 + static_cast<int>((from / 256 / 60) % 3);
@@ -838,6 +754,5 @@ TEST_CASE("audio thread never allocates") {
         engine.process(channels, 2, 256);
         REQUIRE(engine.latencySamples() > 0);
     }
-    gCounting = false;
-    CHECK(gAllocations.load() == 0);
+    CHECK(counter.stop() == 0);
 }

@@ -5,6 +5,7 @@
 #include "LevelMatch.h"
 #include "Measure.h"
 #include "Oversampler.h"
+#include "PhonemeClassifier.h"
 #include "TestSignals.h"
 #include <complex>
 
@@ -268,4 +269,38 @@ TEST_CASE("level match holds in silence") {
     CHECK(std::abs(gainToDb(g) - gainToDb(held)) < 0.3f);
     for (int i = 0; i < static_cast<int>(fs * 5.0); ++i) g = match.push(1e-5f, 1e-3f);
     CHECK(std::abs(gainToDb(g) - gainToDb(held)) < 0.3f);
+}
+
+TEST_CASE("voiced share treats a mostly vowel sound as a vowel") {
+    const auto share = [](float vowel, float stop, float stopShare) {
+        Memberships m;
+        m.vowel = vowel;
+        m.stop = stop;
+        return voicedShare(m, stopShare);
+    };
+    CHECK(share(0.75f, 0.0f, 0.0f) == 1.0f);
+    CHECK(share(0.3f, 0.0f, 0.0f) == doctest::Approx(0.4f));
+    CHECK(share(0.0f, 1.0f, 0.2f) == doctest::Approx(0.2f));
+    CHECK(share(1.0f, 1.0f, 0.35f) == 1.0f);
+    CHECK(share(0.0f, 0.0f, 0.35f) == 0.0f);
+}
+
+TEST_CASE("frame pitch measures a tone") {
+    const double fs = 48000.0;
+    for (double f : { 100.0, 400.0 }) {
+        CAPTURE(f);
+        const auto x = sine(f, -12.0, 9600, fs);
+        CHECK(std::abs(centsBetween(framePitchHz(x, 1000, 2400, fs, 60.0, 1200.0), f)) < 1.0);
+    }
+    CHECK(framePitchHz(noise(-12.0, 9600), 1000, 2400, fs, 60.0, 1200.0) == 0.0);
+}
+
+TEST_CASE("envelope lag finds a delay") {
+    const double fs = 48000.0;
+    const auto x = loudPhrase(fs, 2.0, -6.0);
+    const int late = static_cast<int>(fs * 0.003);
+    std::vector<float> y(x.size(), 0.0f);
+    std::copy(x.begin(), x.end() - late, y.begin() + late);
+    CHECK(std::abs(envelopeLagMs(x, y, fs) - 3.0) < 0.2);
+    CHECK(std::abs(envelopeLagMs(y, x, fs) + 3.0) < 0.2);
 }

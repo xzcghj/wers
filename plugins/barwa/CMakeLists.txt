@@ -1,7 +1,6 @@
 # WERS Barwa: a saturator that gives colour to vowels and leaves sibilants clean.
 add_library(barwa_dsp STATIC
     dsp/BarwaEngine.cpp
-    dsp/CharacterShaper.cpp
 )
 target_include_directories(barwa_dsp PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/dsp)
 target_link_libraries(barwa_dsp PUBLIC wers_dsp)

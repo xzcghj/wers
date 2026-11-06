@@ -4,16 +4,11 @@ namespace barwa {
 
 namespace {
 
-using wers::kPi;
-
 constexpr double kLookSeconds = 0.004;
 constexpr double kSmoothSeconds = 0.02;
 constexpr double kGateSeconds = 0.005;
 constexpr double kSettleSeconds = 0.01; // shelves and band filters forget their past in this time
-constexpr double kDcHz = 12.0, kTiltHz = 1000.0, kTiltDb = 6.0;
-constexpr float kFullDriveDb = 3.0f; // the difference grows in the first 3 dB of the slider
 constexpr float kStopShare = 0.35f;
-constexpr float kVowelFull = 0.75f; // from here on a sound counts as a whole vowel: a forward voice rarely gets higher
 constexpr float kInputLimit = 64.0f; // anything beyond +36 dBFS is not audio
 
 float approach(float value, float target, float coef, float snap) noexcept {
@@ -21,67 +16,11 @@ float approach(float value, float target, float coef, float snap) noexcept {
     return std::abs(target - next) < snap ? target : next;
 }
 
-float differenceAmount(float driveDb) noexcept {
-    const float t = std::clamp(driveDb / kFullDriveDb, 0.0f, 1.0f);
-    return t * t * (3.0f - 2.0f * t);
-}
-
 float cleanValue(float value, float low, float high, float fallback) noexcept {
     return std::isfinite(value) ? std::clamp(value, low, high) : fallback;
 }
 
 } // namespace
-
-void DcBlock::prepare(double fs) noexcept {
-    pole_ = 1.0 - 2.0 * kPi * kDcHz / fs;
-    gain_ = 0.5 * (1.0 + pole_);
-    reset();
-}
-
-void Tilt::prepare(double fs) noexcept {
-    warp_ = std::tan(kPi * kTiltHz / fs);
-    set(0.0f);
-    reset();
-}
-
-void Tilt::set(float tone) noexcept {
-    const double k = std::pow(10.0, kTiltDb * static_cast<double>(tone) / 20.0);
-    const double denominator = 1.0 + k * warp_;
-    b0_ = (k + warp_) / denominator;
-    b1_ = (warp_ - k) / denominator;
-    a1_ = (k * warp_ - 1.0) / denominator;
-}
-
-bool BarwaEngine::Gate::advance(bool changeWanted, float step, int settleTicks) noexcept {
-    switch (phase) {
-        case Phase::Open:
-            if (changeWanted) phase = Phase::Closing;
-            break;
-        case Phase::Closing:
-            level -= step;
-            if (level <= 0.0f) {
-                level = 0.0f;
-                wait = settleTicks;
-                phase = Phase::Settling;
-            }
-            break;
-        case Phase::Settling: {
-            // The fade reaches zero one control step after the level does, so this is when nothing is heard.
-            const bool closedJustNow = wait == settleTicks;
-            if (--wait <= 0) phase = Phase::Opening;
-            return closedJustNow;
-        }
-        case Phase::Opening:
-            if (changeWanted) {
-                phase = Phase::Closing;
-                break;
-            }
-            level += step;
-            if (level >= 1.0f) openNow();
-            break;
-    }
-    return false;
-}
 
 void BarwaEngine::prepare(double fs, int qualityLog2) {
     fs_ = fs;
@@ -196,7 +135,7 @@ void BarwaEngine::snapToParams() noexcept {
         b.mix = q.mix;
         b.solo = !anySolo_ || q.solo ? 1.0f : 0.0f;
         b.gain.set(wers::dbToGain(b.driveDb));
-        b.weight.set(b.mix * differenceAmount(b.driveDb) * b.solo);
+        b.weight.set(b.mix * wers::differenceAmount(b.driveDb) * b.solo);
         b.keep.set(b.solo);
         for (auto& c : channel_) c.band[i].shaper.setCharacter(b.character);
     }
@@ -247,14 +186,14 @@ void BarwaEngine::controlTick() noexcept {
         b.mix = approach(b.mix, q.mix, smooth_, 1.0e-5f);
         b.solo = approach(b.solo, !anySolo_ || q.solo ? 1.0f : 0.0f, smooth_, 1.0e-5f);
         b.gain.aim(wers::dbToGain(b.driveDb), perSample_);
-        b.weight.aim(b.mix * differenceAmount(b.driveDb) * b.solo * b.gate.level, perSample_);
+        b.weight.aim(b.mix * wers::differenceAmount(b.driveDb) * b.solo * b.gate.level, perSample_);
         b.keep.aim(b.solo, perSample_);
     }
 }
 
 void BarwaEngine::aimMask() noexcept {
     const auto& m = classifier_.current();
-    const float share = std::clamp(m.vowel / kVowelFull + kStopShare * m.stop, 0.0f, 1.0f);
+    const float share = wers::voicedShare(m, kStopShare);
     const float target = (1.0f - mask_) + mask_ * share;
     maskRamp_.aim(target, perHopSample_);
     maskNow_.store(target, std::memory_order_relaxed);

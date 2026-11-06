@@ -1,7 +1,7 @@
 #include "CharacterShaper.h"
 #include <bit>
 
-namespace barwa {
+namespace wers {
 
 namespace {
 
@@ -42,7 +42,7 @@ inline float tapeRoot(float x) noexcept {
 
 void CharacterShaper::prepare(double highRate) {
     rate_ = highRate;
-    envCoef_ = wers::onePoleCoeff(kLevelSeconds, highRate);
+    envCoef_ = onePoleCoeff(kLevelSeconds, highRate);
     setCharacter(character_);
     reset();
 }
@@ -55,7 +55,7 @@ void CharacterShaper::reset() noexcept {
 
 void CharacterShaper::setCharacter(Character character) noexcept {
     character_ = character;
-    using Type = wers::Biquad::Type;
+    using Type = Biquad::Type;
     // A shelf with the opposite gain is the exact inverse of the first one.
     if (character == Character::Tape) {
         emphasis_.set(Type::HighShelf, kTapeShelfHz, kFlatQ, kTapeShelfDb, rate_);
@@ -99,4 +99,4 @@ float CharacterShaper::tick(float x, float gain) noexcept {
     return in;
 }
 
-} // namespace barwa
+} // namespace wers
