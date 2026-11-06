@@ -38,7 +38,7 @@ private:
         StreamKind kind = StreamKind::Direct;
         LayerParams applied;
         int allowed = 0, streamDelay = 0;
-        float appliedLowHz = 0.0f, appliedHighHz = 0.0f, semis = 0.0f, loudest = 0.0f;
+        float lowOctaves = 0.0f, highOctaves = 0.0f, appliedLow = 0.0f, appliedHigh = 0.0f, semis = 0.0f, loudest = 0.0f;
     };
     void controlTick() noexcept;
     void applyStructure() noexcept;

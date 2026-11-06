@@ -328,6 +328,43 @@ TEST_CASE("loading a preset does not click") {
     }
 }
 
+TEST_CASE("walking through a group with the arrows does not click") {
+    // The neighbours in a group are the changes people make most, and they often differ only in what glides.
+    const auto presets = factoryPresets();
+    const int n = static_cast<int>(kFs), change = 256 * 94;
+    juce::AudioBuffer<float> input(2, n);
+    const auto tone = wers::test::sine(150.0, -12.0, n, kFs);
+    input.copyFrom(0, 0, tone.data(), n);
+    input.copyFrom(1, 0, tone.data(), n);
+    // Without the dry voice a click has nothing to hide behind.
+    const auto worstJump = [&](const juce::String& first, const juce::String& next) {
+        RefrenProcessor p;
+        p.presets().load(first);
+        setParam(p, ids::delta, 1.0f);
+        p.prepareToPlay(kFs, 256);
+        juce::AudioBuffer<float> audio;
+        audio.makeCopyOf(input);
+        juce::MidiBuffer midi;
+        for (int from = 0; from < n; from += 256) {
+            if (from == change && next.isNotEmpty()) p.presets().load(next);
+            juce::AudioBuffer<float> view(audio.getArrayOfWritePointers(), 2, from, juce::jmin(256, n - from));
+            p.processBlock(view, midi);
+        }
+        double step = 0.0;
+        for (int c = 0; c < 2; ++c)
+            for (int i = change; i < n; ++i) step = juce::jmax(step, std::abs(static_cast<double>(audio.getSample(c, i)) - audio.getSample(c, i - 1)));
+        return step;
+    };
+    for (size_t k = 0; k + 1 < presets.size(); k += static_cast<size_t>(REFREN_PRESET_STEP)) {
+        if (juce::String(presets[k].group) != juce::String(presets[k + 1].group)) continue;
+        const auto first = pl(presets[k].name), next = pl(presets[k + 1].name);
+        CAPTURE(first);
+        CAPTURE(next);
+        // Far under anything that can be heard, a wet sound that is silent anyway may move more than it did.
+        CHECK(worstJump(first, next) <= juce::jmax(1.0e-4, 2.0 * juce::jmax(worstJump(first, {}), worstJump(next, {}))));
+    }
+}
+
 TEST_CASE("a preset leaves four things alone") {
     RefrenProcessor p;
     setParam(p, ids::amount, 40.0f);

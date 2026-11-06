@@ -91,6 +91,8 @@ void RefrenEngine::prepare(double fs) {
         seed += 7u;
         l.psola.prepare(fs, shiftedDelay_);
         l.sub.prepare(fs, shiftedDelay_);
+        // The same frequency at another rate needs other coefficients.
+        l.appliedLow = l.appliedHigh = 0.0f;
     }
     for (auto& d : dryDelay_) d.prepare(latency_);
     grain_.prepare(fs);
@@ -166,6 +168,9 @@ void RefrenEngine::applyStructure() noexcept {
         l.layer.reset();
         l.lowCut.reset();
         l.highCut.reset();
+        // The new sound starts in silence, so its filters do not have to get there.
+        l.lowOctaves = std::log2(p.lowHz);
+        l.highOctaves = std::log2(p.highHz);
         PsolaSettings settings;
         settings.semitones = static_cast<float>(p.semis);
         settings.formantSemitones = p.formant;
@@ -294,13 +299,16 @@ void RefrenEngine::controlTick() noexcept {
         now.timeMs = soft.timeMs;
         now.detuneCents = soft.detuneCents;
         l.layer.set(now, soft_.widthScale, soft_.timeScale, l.allowed, l.streamDelay);
-        if (soft.lowHz != l.appliedLowHz) {
-            l.appliedLowHz = soft.lowHz;
-            l.lowCut.set(soft.lowHz, 0.7071, fs_);
+        // In octaves, so a move is even from one end of the range to the other.
+        l.lowOctaves = approach(l.lowOctaves, std::log2(soft.lowHz), smooth_, 1.0e-3f);
+        l.highOctaves = approach(l.highOctaves, std::log2(soft.highHz), smooth_, 1.0e-3f);
+        if (l.lowOctaves != l.appliedLow) {
+            l.appliedLow = l.lowOctaves;
+            l.lowCut.set(std::pow(2.0, static_cast<double>(l.lowOctaves)), 0.7071, fs_);
         }
-        if (soft.highHz != l.appliedHighHz) {
-            l.appliedHighHz = soft.highHz;
-            l.highCut.set(soft.highHz, 0.7071, fs_);
+        if (l.highOctaves != l.appliedHigh) {
+            l.appliedHigh = l.highOctaves;
+            l.highCut.set(std::pow(2.0, static_cast<double>(l.highOctaves)), 0.7071, fs_);
         }
         layerLevel_[k].store(l.loudest * l.layer.levelGain() * std::sqrt(static_cast<float>(std::max(1, l.allowed))) * gate_.level, std::memory_order_relaxed);
         l.loudest *= meterFall_;

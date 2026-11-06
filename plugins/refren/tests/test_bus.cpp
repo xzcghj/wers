@@ -711,3 +711,93 @@ TEST_CASE("bus changes that cannot be smoothed do not click") {
         }
     }
 }
+
+TEST_CASE("a change late in a long session does not stall") {
+    // Everything that a change resets, with every kind of layer that runs on the voice.
+    const double fs = 8000.0;
+    RefrenParams p;
+    for (int k = 0; k < 4; ++k) {
+        p.layer[static_cast<size_t>(k)].on = true;
+        p.layer[static_cast<size_t>(k)].voices = 2;
+    }
+    p.layer[0].semis = -12;
+    p.layer[1].semis = 12;
+    p.layer[2].source = Source::Robot;
+    p.layer[3].source = Source::Sub;
+    RefrenEngine engine;
+    engine.prepare(fs);
+    engine.setParams(p);
+    constexpr int kBlock = 64;
+    std::vector<float> block(kBlock, 0.0f);
+    float* channels[] = { block.data() };
+    for (int i = 0; i < static_cast<int>(fs * 180.0) / kBlock; ++i) {
+        std::fill(block.begin(), block.end(), 0.0f);
+        engine.process(channels, 1, kBlock);
+    }
+    const auto voiced = vowel(110.0, -18.0, static_cast<int>(fs * 4.0), fs);
+    size_t at = 0;
+    const auto nextBlockSeconds = [&] {
+        std::copy_n(voiced.begin() + static_cast<std::ptrdiff_t>(at), kBlock, block.begin());
+        at += kBlock;
+        const auto start = std::chrono::steady_clock::now();
+        engine.process(channels, 1, kBlock);
+        return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    };
+    while (at < static_cast<size_t>(fs * 1.0)) nextBlockSeconds();
+    std::vector<double> steady;
+    for (int i = 0; i < 100; ++i) steady.push_back(nextBlockSeconds());
+    std::nth_element(steady.begin(), steady.begin() + 50, steady.end());
+    const double usual = steady[50];
+    // The quickest worst block of a few changes, so one busy moment of the computer does not count.
+    double quickestWorst = 1.0e9;
+    for (int change = 0; change < 3; ++change) {
+        p.layer[0].semis = change % 2 == 0 ? -7 : -12;
+        engine.setParams(p);
+        double worst = 0.0;
+        for (int i = 0; i < 12; ++i) worst = std::max(worst, nextBlockSeconds());
+        quickestWorst = std::min(quickestWorst, worst);
+    }
+    MESSAGE("usual block " << usual * 1.0e6 << " microseconds, worst around a change " << quickestWorst * 1.0e6);
+    CHECK(quickestWorst < 10.0 * usual);
+}
+
+TEST_CASE("an engine prepared again plays like a new one") {
+    // The host may change the rate with the project open, and a render may run at another rate than the playback.
+    RefrenParams p;
+    p.layer[0].on = true;
+    p.layer[0].lowHz = 400.0f;
+    p.layer[0].highHz = 3000.0f;
+    p.layer[1].on = true;
+    p.layer[1].semis = -12;
+    p.layer[2].on = true;
+    p.layer[2].source = Source::Whisper;
+    p.grainDb = 12.0f;
+    p.tilt = 0.3f;
+    p.motion = Motion::Flanger;
+    p.motionDepth = 0.5f;
+    p.echoMix = 0.3f;
+    p.verbMix = 0.3f;
+    for (const auto& [first, second] : { std::pair<double, double>{ 96000.0, 44100.0 }, { 44100.0, 96000.0 }, { 48000.0, 48000.0 } }) {
+        CAPTURE(first);
+        CAPTURE(second);
+        RefrenEngine used, fresh;
+        used.prepare(first);
+        used.setParams(p);
+        auto before = loudPhrase(first, 0.3, -6.0);
+        float* beforeChannels[] = { before.data() };
+        used.process(beforeChannels, 1, static_cast<int>(before.size()));
+        used.prepare(second);
+        used.setParams(p);
+        fresh.prepare(second);
+        fresh.setParams(p);
+        auto a = loudPhrase(second, 1.0, -6.0);
+        auto b = a;
+        float* aChannels[] = { a.data() };
+        float* bChannels[] = { b.data() };
+        used.process(aChannels, 1, static_cast<int>(a.size()));
+        fresh.process(bChannels, 1, static_cast<int>(b.size()));
+        float largest = 0.0f;
+        for (size_t i = 0; i < a.size(); ++i) largest = std::max(largest, std::abs(a[i] - b[i]));
+        CHECK(largest < 1.0e-6f);
+    }
+}

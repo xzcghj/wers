@@ -56,6 +56,12 @@ void Psola::placeGrain(const VoiceAnalysis& voice, const Mark& mark, double half
 
 float Psola::tick(const VoiceAnalysis& voice) noexcept {
     const int64_t newest = voice.now() - 1;
+    // After a reset the voice may have been running for hours. No piece from that time reaches this sample any more,
+    // and walking through them all here would stall the audio thread for longer with every minute.
+    if (nextGrain_ + longestHalf_ < static_cast<double>(newest)) {
+        nextGrain_ = static_cast<double>(newest);
+        startOfVoice_ = true;
+    }
     while (nextGrain_ - longestHalf_ <= static_cast<double>(newest)) {
         const int64_t wanted = static_cast<int64_t>(nextGrain_) - delay_;
         PitchReading pitch = voice.pitchAt(wanted);

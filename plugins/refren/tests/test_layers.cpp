@@ -524,6 +524,33 @@ TEST_CASE("a filter moves without a click") {
     CHECK(run(cut, open) <= 2.0 * steady);
 }
 
+TEST_CASE("one filter moving alone does not click") {
+    const int n = static_cast<int>(kFs), change = 24000;
+    const auto x = sine(150.0, -12.0, n, kFs);
+    const auto run = [&](const RefrenParams& before, const RefrenParams& after) {
+        RefrenEngine engine;
+        engine.prepare(kFs);
+        engine.setParams(before);
+        auto y = x;
+        for (int from = 0; from < n; from += 32) {
+            if (from == change) engine.setParams(after);
+            float* channels[] = { y.data() + from };
+            engine.process(channels, 1, std::min(32, n - from));
+        }
+        return worstJump(y, change, n);
+    };
+    RefrenParams open;
+    open.delta = true;
+    auto dull = open, thin = open;
+    dull.layer[0].highHz = 1000.0f;
+    thin.layer[0].lowHz = 1000.0f;
+    const double steady = std::max(run(open, open), run(dull, dull));
+    CHECK(run(open, dull) <= 2.0 * steady);
+    CHECK(run(dull, open) <= 2.0 * steady);
+    CHECK(run(open, thin) <= 2.0 * steady);
+    CHECK(run(thin, open) <= 2.0 * steady);
+}
+
 TEST_CASE("a voice coming through an emptied line does not click") {
     const int n = static_cast<int>(kFs);
     const auto x = sine(150.0, -12.0, n, kFs);

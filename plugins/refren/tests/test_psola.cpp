@@ -4,6 +4,7 @@
 #include "Psola.h"
 #include "TestSignals.h"
 #include "VoiceSignals.h"
+#include <chrono>
 
 using namespace refren;
 using namespace refren::test;
@@ -340,4 +341,32 @@ TEST_CASE("psola never allocates") {
         psola.tick(voice);
     }
     CHECK(counter.stop() == 0);
+}
+
+TEST_CASE("a stream reset late in a long session does not stall") {
+    // A preset change resets the stream while the clock of the voice runs on. Catching up with the voice must not
+    // take longer with every minute of the session, because all of it happens inside one sample.
+    const double fs = 8000.0;
+    VoiceAnalysis voice;
+    voice.prepare(fs);
+    for (int i = 0; i < static_cast<int>(fs * 300.0); ++i) voice.push(0.0f);
+    const auto voiced = vowel(100.0, -18.0, static_cast<int>(fs), fs);
+    for (const float v : voiced) voice.push(v);
+
+    Psola psola;
+    psola.prepare(fs, streamDelay(fs));
+    psola.set(shifted(-12.0f));
+    // The quickest of a few, so one busy moment of the computer does not count.
+    double quickest = 1.0e9;
+    for (int attempt = 0; attempt < 5; ++attempt) {
+        psola.reset();
+        voice.push(voiced[static_cast<size_t>(attempt)]);
+        const auto start = std::chrono::steady_clock::now();
+        const float out = psola.tick(voice);
+        quickest = std::min(quickest, std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
+        CHECK(std::isfinite(out));
+    }
+    MESSAGE("first sample after a reset: " << quickest * 1.0e6 << " microseconds");
+    // One block of 64 samples at this rate lasts 8 ms.
+    CHECK(quickest < 0.5e-3);
 }
