@@ -112,6 +112,7 @@ Grupy **Ulubione** i **Moje** są twoje. Gwiazdka na karcie dodaje preset do Ulu
 - **Scena:** każdy głos to kropka. W poziomie widać, gdzie stoi, w pionie jego interwał, a jasność mówi, jak głośno gra. Na syczących kropki przygasają, bo maska chowa warstwy. Duża kropka w środku to suchy głos, a bursztynowa oznacza szczyt ponad 0 dBFS.
 - **Szczegóły:** zamiast kart pokazują cztery warstwy i całą resztę. Suwak, który przy wybranym źródle nic nie robi, jest przygaszony.
 - **Losuj:** rusza szerokość, czas, rozstrojenie, ton, pogłos i echo obecnego brzmienia. Interwały i barwy zostają, więc nic nie wypada ze stroju. Gwiazdka przy nazwie oznacza, że brzmienie odeszło od presetu.
+- **Ruch:** głębokość ruchu. Większość presetów nie ma żadnego, więc ruszenie suwaka włącza Autopan. Rodzaj i tempo zmienisz w Szczegółach.
 - **Delta:** słychać tylko to, co dodaje wtyczka.
 - **Spółgłoski:** ile warstw schodzi z drogi na syczących. W grupie Instrumenty jest na zerze, bo tam nie ma czego chronić.
 
