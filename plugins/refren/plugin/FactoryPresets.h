@@ -10,6 +10,9 @@ struct PresetGroup {
 
 inline constexpr std::array kGroups{
     PresetGroup{ "Dubel", 12 },
+    PresetGroup{ "Refren", 12 },
+    PresetGroup{ "Ekipa", 10 },
+    PresetGroup{ "Chór", 10 },
 };
 
 std::vector<wers::ui::FactoryPreset> factoryPresets();
