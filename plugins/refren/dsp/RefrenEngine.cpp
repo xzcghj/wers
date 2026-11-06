@@ -211,6 +211,7 @@ void RefrenEngine::controlTick() noexcept {
     controlLeft_ = controlStep_;
     const bool snap = snapPending_;
     if (snap) {
+        soft_ = wanted_;
         applyStructure();
         amount_ = wanted_.amount;
         dryDb_ = wanted_.dryDb;
@@ -227,34 +228,36 @@ void RefrenEngine::controlTick() noexcept {
         duckAmount_ = wanted_.duck;
     } else {
         if (gate_.advance(structureChanged(), gateStep_, settleTicks_)) applyStructure();
-        amount_ = approach(amount_, wanted_.amount, smooth_, 1.0e-5f);
-        dryDb_ = approach(dryDb_, wanted_.dryDb, smooth_, 1.0e-3f);
-        trimDb_ = approach(trimDb_, wanted_.trimDb, smooth_, 1.0e-3f);
-        outputDb_ = approach(outputDb_, wanted_.outputDb, smooth_, 1.0e-3f);
-        consonants_ = approach(consonants_, wanted_.consonants, smooth_, 1.0e-5f);
-        deltaShare_ = approach(deltaShare_, wanted_.delta ? 1.0f : 0.0f, smooth_, 1.0e-5f);
-        const float tilt = approach(tiltNow_, wanted_.tilt, smooth_, 1.0e-4f);
+        // On its way out the old sound keeps its settings, because a new Drive or level there would be a bump.
+        if (gate_.phase != wers::Gate::Phase::Closing) soft_ = wanted_;
+        amount_ = approach(amount_, soft_.amount, smooth_, 1.0e-5f);
+        dryDb_ = approach(dryDb_, soft_.dryDb, smooth_, 1.0e-3f);
+        trimDb_ = approach(trimDb_, soft_.trimDb, smooth_, 1.0e-3f);
+        outputDb_ = approach(outputDb_, soft_.outputDb, smooth_, 1.0e-3f);
+        consonants_ = approach(consonants_, soft_.consonants, smooth_, 1.0e-5f);
+        deltaShare_ = approach(deltaShare_, soft_.delta ? 1.0f : 0.0f, smooth_, 1.0e-5f);
+        const float tilt = approach(tiltNow_, soft_.tilt, smooth_, 1.0e-4f);
         if (tilt != tiltNow_) {
             tiltNow_ = tilt;
             for (auto& t : tilt_) t.set(tilt);
         }
-        echoMix_ = approach(echoMix_, wanted_.echoMix, smooth_, 1.0e-5f);
-        verbMix_ = approach(verbMix_, wanted_.verbMix, smooth_, 1.0e-5f);
-        verbDecay_ = approach(verbDecay_, wanted_.verbDecay, smooth_, 1.0e-3f);
-        send_ = approach(send_, wanted_.sendDry, smooth_, 1.0e-5f);
-        duckAmount_ = approach(duckAmount_, wanted_.duck, smooth_, 1.0e-5f);
+        echoMix_ = approach(echoMix_, soft_.echoMix, smooth_, 1.0e-5f);
+        verbMix_ = approach(verbMix_, soft_.verbMix, smooth_, 1.0e-5f);
+        verbDecay_ = approach(verbDecay_, soft_.verbDecay, smooth_, 1.0e-3f);
+        send_ = approach(send_, soft_.sendDry, smooth_, 1.0e-5f);
+        duckAmount_ = approach(duckAmount_, soft_.duck, smooth_, 1.0e-5f);
     }
     mask_.setAmount(consonants_);
-    grain_.set(wanted_.grainDb, appliedCharacter_);
-    motion_.set(appliedMotion_, wanted_.motionRate, wanted_.motionDepth);
+    grain_.set(soft_.grainDb, appliedCharacter_);
+    motion_.set(appliedMotion_, soft_.motionRate, soft_.motionDepth);
     const bool echoWanted = echoMix_ > 0.0f || echoMixRamp_.now > 0.0f;
     if (echoWanted && !echoOn_) echo_.reset();
     echoOn_ = echoWanted;
-    echo_.set(appliedEchoTime_, wanted_.echoFeedback, appliedPing_, wanted_.echoToneHz, bpm_);
+    echo_.set(appliedEchoTime_, soft_.echoFeedback, appliedPing_, soft_.echoToneHz, bpm_);
     const bool verbWanted = verbMix_ > 0.0f || verbMixRamp_.now > 0.0f;
     if (verbWanted && !verbOn_) reverb_.reset();
     verbOn_ = verbWanted;
-    reverb_.set(appliedSize_, verbDecay_, wanted_.verbToneHz, wanted_.verbPreMs, wanted_.verbShimmer);
+    reverb_.set(appliedSize_, verbDecay_, soft_.verbToneHz, soft_.verbPreMs, soft_.verbShimmer);
     const float duckWanted = duckTarget();
     duckGain_ += (duckWanted - duckGain_) * (duckWanted < duckGain_ ? duckAttack_ : duckRelease_);
     if (snap) duckGain_ = duckWanted;
@@ -284,13 +287,13 @@ void RefrenEngine::controlTick() noexcept {
     }
     for (size_t k = 0; k < layers_.size(); ++k) {
         auto& l = layers_[k];
-        const auto& soft = wanted_.layer[k];
+        const auto& soft = soft_.layer[k];
         LayerParams now = l.applied;
         now.levelDb = soft.levelDb;
         now.width = soft.width;
         now.timeMs = soft.timeMs;
         now.detuneCents = soft.detuneCents;
-        l.layer.set(now, wanted_.widthScale, wanted_.timeScale, l.allowed, l.streamDelay);
+        l.layer.set(now, soft_.widthScale, soft_.timeScale, l.allowed, l.streamDelay);
         if (soft.lowHz != l.appliedLowHz) {
             l.appliedLowHz = soft.lowHz;
             l.lowCut.set(soft.lowHz, 0.7071, fs_);

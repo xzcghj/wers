@@ -50,7 +50,7 @@ private:
     float perSample_ = 1.0f / 32.0f, smooth_ = 0.05f, gateStep_ = 0.033f, meterFall_ = 0.99f;
     bool snapPending_ = true, anyWhisper_ = false;
 
-    RefrenParams wanted_;
+    RefrenParams wanted_, soft_;
     VoiceAnalysis voice_;
     VoiceMask mask_;
     WhisperVoice whisper_;
