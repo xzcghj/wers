@@ -12,6 +12,8 @@
 #include "ui/PresetBrowser.h"
 #include "ui/RefrenEditor.h"
 #include "ui/StageView.h"
+#include "ui/Strings.h"
+#include "SharedText.h"
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
@@ -927,6 +929,105 @@ TEST_CASE("a star stays after reopening") {
     CHECK(nowhere.contains(name));
     nowhere.toggle(name);
     CHECK_FALSE(nowhere.contains(name));
+}
+
+TEST_CASE("a preset that cannot be read says so") {
+    TempFolder folder;
+    RefrenProcessor p(folder.path);
+    std::unique_ptr<juce::AudioProcessorEditor> window(p.createEditor());
+    auto& editor = dynamic_cast<RefrenEditor&>(*window);
+    const auto message = juce::String::fromUTF8(wers::ui::text::presetNoRead);
+    const auto file = folder.path.getChildFile(juce::String::fromUTF8("Mój.xml"));
+    SUBCASE("a file deleted after the list was made") {
+        editor.presetBar().saveAs(juce::String::fromUTF8("Mój"));
+        REQUIRE(file.deleteFile());
+    }
+    SUBCASE("a damaged file") {
+        editor.presetBar().saveAs(juce::String::fromUTF8("Mój"));
+        REQUIRE(file.replaceWithText("to nie jest preset"));
+    }
+    editor.browser().choose(juce::String::fromUTF8("Mój"));
+    CHECK(editor.presetBar().shownName() == message);
+}
+
+TEST_CASE("a star that cannot be written says so") {
+    TempFolder folder;
+    const auto blocked = folder.path.getChildFile("to jest plik");
+    REQUIRE(blocked.create().wasOk());
+    RefrenProcessor p(blocked.getChildFile("podfolder"));
+    std::unique_ptr<juce::AudioProcessorEditor> window(p.createEditor());
+    auto& editor = dynamic_cast<RefrenEditor&>(*window);
+    const auto name = juce::String::fromUTF8("Luźny");
+    editor.browser().toggleStar(name);
+    CHECK(editor.browser().hasStar(name));
+    CHECK(editor.presetBar().shownName() == juce::String::fromUTF8(text::starNoWrite));
+}
+
+TEST_CASE("two windows keep each other's stars") {
+    TempFolder folder;
+    Favorites first(folder.path), second(folder.path);
+    REQUIRE(first.toggle("Luzny"));
+    REQUIRE(second.toggle("Ciasny"));
+    // A click means what the window shows, and the second one shows no star here yet.
+    REQUIRE(first.toggle("Refren"));
+    REQUIRE(second.toggle("Refren"));
+    Favorites later(folder.path);
+    CHECK(later.contains("Luzny"));
+    CHECK(later.contains("Ciasny"));
+    CHECK(later.contains("Refren"));
+    // What the other window has done also shows when a group is opened again.
+    TempFolder other;
+    RefrenProcessor p(other.path);
+    std::unique_ptr<juce::AudioProcessorEditor> window(p.createEditor());
+    auto& browser = dynamic_cast<RefrenEditor&>(*window).browser();
+    const auto name = juce::String::fromUTF8("Luźny");
+    Favorites elsewhere(other.path);
+    REQUIRE(elsewhere.toggle(name));
+    CHECK_FALSE(browser.hasStar(name));
+    browser.showGroup(juce::String::fromUTF8(text::favorites));
+    CHECK(browser.hasStar(name));
+    CHECK(browser.shownNames().contains(name));
+}
+
+TEST_CASE("the star of Losuj does not get in the way") {
+    TempFolder folder;
+    RefrenProcessor p(folder.path);
+    wers::ui::PresetBar bar(p.presets());
+    juce::Random random(3);
+    SUBCASE("on a factory preset") {
+        REQUIRE(p.presets().load(juce::String::fromUTF8("Luźny")));
+        p.randomise(random);
+        REQUIRE(p.presets().currentName().endsWithChar('*'));
+        CHECK(bar.nameToOffer().isEmpty());
+        CHECK(bar.nameToDelete().isEmpty());
+    }
+    SUBCASE("on an own preset") {
+        const auto mine = juce::String::fromUTF8("Mój");
+        bar.saveAs(mine);
+        p.randomise(random);
+        REQUIRE(p.presets().currentName() == mine + "*");
+        CHECK(bar.nameToOffer() == mine);
+        CHECK(bar.nameToDelete() == mine);
+        REQUIRE(p.presets().remove(bar.nameToDelete()));
+        CHECK_FALSE(p.presets().userNames().contains(mine));
+        CHECK(p.presets().currentName().isEmpty());
+    }
+}
+
+TEST_CASE("the big Ruch slider always does something") {
+    TempFolder folder;
+    RefrenProcessor p(folder.path);
+    std::unique_ptr<juce::AudioProcessorEditor> window(p.createEditor());
+    auto& slider = dynamic_cast<RefrenEditor&>(*window).motionSlider();
+    REQUIRE(getParam(p, ids::motion) == doctest::Approx(0.0f));
+    REQUIRE(slider.onDragStart != nullptr);
+    // Most presets have no movement chosen, so touching the slider picks one.
+    slider.onDragStart();
+    CHECK(getParam(p, ids::motion) == doctest::Approx(1.0f));
+    // A movement that is already there stays.
+    setParam(p, ids::motion, 3.0f);
+    slider.onDragStart();
+    CHECK(getParam(p, ids::motion) == doctest::Approx(3.0f));
 }
 
 TEST_CASE("losuj moves only what it may") {

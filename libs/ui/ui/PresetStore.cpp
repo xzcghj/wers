@@ -135,13 +135,18 @@ bool PresetStore::remove(const juce::String& name) {
     const auto file = fileFor(name);
     if (file == juce::File() || !file.existsAsFile() || !file.deleteFile()) return false;
     const juce::ScopedLock lock(lock_);
-    if (current_ == name) current_.clear();
+    if (current_ == name || current_ == name + "*") current_.clear();
     return true;
 }
 
 juce::String PresetStore::currentName() const {
     const juce::ScopedLock lock(lock_);
     return current_;
+}
+
+juce::String PresetStore::plainCurrentName() const {
+    const auto name = currentName();
+    return name.endsWithChar('*') ? name.dropLastCharacters(1) : name;
 }
 
 void PresetStore::setShownName(const juce::String& name) {

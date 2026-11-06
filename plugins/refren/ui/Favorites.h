@@ -7,8 +7,12 @@ namespace refren {
 class Favorites {
 public:
     explicit Favorites(juce::File folder);
+    // Another window may have written the file since.
+    void reload();
     bool contains(const juce::String& name) const { return names_.contains(name); }
-    void toggle(const juce::String& name);
+    // What this window shows is what the click means. False when the star could not be written, and then it lasts
+    // until the window closes.
+    bool toggle(const juce::String& name);
     juce::StringArray names() const { return names_; }
 private:
     juce::File file_;

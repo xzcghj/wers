@@ -16,6 +16,11 @@ public:
     void saveAs(const juce::String& name);
     void loadNamed(const juce::String& name);
     juce::String shownName() const { return name_.getButtonText(); }
+    // What saving offers as the name, and which preset the menu can delete now. Empty when there is none.
+    juce::String nameToOffer() const;
+    juce::String nameToDelete() const;
+    // Shows a message in place of the name for a few seconds.
+    void showError(const juce::String& message);
     // Called by the editor's timer, for changes that come from a loaded project.
     void refresh();
     void resized() override;
@@ -23,7 +28,6 @@ private:
     void openMenu();
     void startNaming();
     void stopNaming();
-    void showError(const juce::String& message);
     void textEditorReturnKeyPressed(juce::TextEditor&) override;
     void textEditorEscapeKeyPressed(juce::TextEditor&) override;
     void textEditorFocusLost(juce::TextEditor&) override;

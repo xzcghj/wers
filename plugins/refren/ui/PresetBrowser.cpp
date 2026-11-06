@@ -18,7 +18,6 @@ void drawStar(juce::Graphics& g, juce::Rectangle<float> area, bool filled, juce:
     else g.strokePath(star, juce::PathStrokeType(1.2f));
 }
 
-juce::String withoutStar(juce::String name) { return name.endsWithChar('*') ? name.dropLastCharacters(1) : name; }
 
 } // namespace
 
@@ -100,7 +99,7 @@ PresetBrowser::PresetBrowser(PresetStore& store, PresetBar& bar, const juce::Fil
     viewport_.setScrollBarsShown(true, false);
     viewport_.setScrollBarThickness(kScrollW);
     addAndMakeVisible(viewport_);
-    const auto current = withoutStar(store_.currentName());
+    const auto current = store_.plainCurrentName();
     lastCurrent_ = store_.currentName();
     showGroup(groupOf(current));
 }
@@ -138,6 +137,7 @@ juce::StringArray PresetBrowser::namesIn(const juce::String& group) const {
 
 void PresetBrowser::showGroup(const juce::String& name) {
     group_ = name;
+    favorites_.reload();
     for (auto* row : rows_) row->setToggleState(row->getButtonText() == name, juce::dontSendNotification);
     buildCards();
 }
@@ -146,7 +146,7 @@ void PresetBrowser::buildCards() {
     shown_ = namesIn(group_);
     bar_.setWalkList(shown_);
     cards_.clear();
-    const auto current = withoutStar(store_.currentName());
+    const auto current = store_.plainCurrentName();
     for (const auto& name : shown_) {
         const auto* info = store_.factoryInfo(name);
         auto* card = cards_.add(new Card(*this, name, info != nullptr && info->description != nullptr ? pl(info->description) : juce::String()));
@@ -168,13 +168,15 @@ void PresetBrowser::placeCards() {
 }
 
 void PresetBrowser::choose(const juce::String& preset) {
-    store_.load(preset);
-    bar_.refresh();
+    bar_.loadNamed(preset);
     refresh();
 }
 
 void PresetBrowser::toggleStar(const juce::String& preset) {
-    favorites_.toggle(preset);
+    if (!favorites_.toggle(preset)) {
+        bar_.showError(pl(text::starNoWrite));
+        bar_.refresh();
+    }
     if (group_ == pl(text::favorites)) buildCards();
     else
         for (auto* card : cards_)
@@ -190,7 +192,7 @@ void PresetBrowser::refresh() {
         buildCards();
         return;
     }
-    const auto plain = withoutStar(current);
+    const auto plain = store_.plainCurrentName();
     for (auto* card : cards_) card->setCurrent(card->getButtonText() == plain);
 }
 

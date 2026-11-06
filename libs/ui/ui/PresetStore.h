@@ -31,6 +31,8 @@ public:
     juce::String currentName() const;
     // For a sound that has moved on from the preset it was loaded from.
     void setShownName(const juce::String& name);
+    // The current name without a star, which only says that the sound has moved on from this preset.
+    juce::String plainCurrentName() const;
 
     void storeSlot(int index);
     void recallSlot(int index);

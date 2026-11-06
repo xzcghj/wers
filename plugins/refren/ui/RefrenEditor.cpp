@@ -142,7 +142,17 @@ public:
             auto& parameter = *state.getParameter(id);
             s->slider.setDoubleClickReturnValue(true, static_cast<double>(parameter.convertFrom0to1(parameter.getDefaultValue())));
         }
+        // Most presets have no movement chosen, and without one this slider would do nothing at all.
+        motionSlider().onDragStart = [&state] {
+            auto& motion = *state.getParameter(ids::motion);
+            if (static_cast<int>(motion.convertFrom0to1(motion.getValue())) != static_cast<int>(Motion::None)) return;
+            motion.beginChangeGesture();
+            motion.setValueNotifyingHost(motion.convertTo0to1(static_cast<float>(Motion::Autopan)));
+            motion.endChangeGesture();
+        };
     }
+
+    juce::Slider& motionSlider() { return bottom[4]->slider; }
 
     void showDetails(bool shown) {
         details.setToggleState(shown, juce::dontSendNotification);
@@ -247,6 +257,8 @@ void RefrenEditor::timerCallback() {
 PresetBrowser& RefrenEditor::browser() { return root_->browser; }
 
 StageView& RefrenEditor::stage() { return root_->stage; }
+
+juce::Slider& RefrenEditor::motionSlider() { return root_->motionSlider(); }
 
 PresetBar& RefrenEditor::presetBar() { return root_->presetBar; }
 

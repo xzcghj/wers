@@ -39,9 +39,7 @@ void PresetBar::step(int direction) {
     const int size = names.size();
     if (size == 0) return;
     // A star after the name means the sound has moved on from this preset, which is still where the walk is.
-    auto current = store_.currentName();
-    if (current.endsWithChar('*')) current = current.dropLastCharacters(1);
-    const int now = names.indexOf(current);
+    const int now = names.indexOf(store_.plainCurrentName());
     int next = now >= 0 ? now + direction : (direction > 0 ? 0 : size - 1);
     // A file can vanish or get damaged after the list was read. The arrows still get past it.
     for (int tried = 0; tried < size; ++tried, next += direction) {
@@ -103,7 +101,7 @@ void PresetBar::refresh() {
 
 void PresetBar::openMenu() {
     const auto names = store_.names();
-    const auto current = store_.currentName();
+    const auto current = store_.plainCurrentName();
     juce::PopupMenu menu;
     bool mine = false;
     for (int i = 0; i < names.size(); ++i) {
@@ -114,25 +112,32 @@ void PresetBar::openMenu() {
         menu.addItem(i + 1, names[i], true, names[i] == current);
     }
     constexpr int kDeleteId = 100000;
-    if (current.isNotEmpty() && !store_.isFactory(current)) {
+    const auto deletable = nameToDelete();
+    if (deletable.isNotEmpty()) {
         menu.addSeparator();
-        menu.addItem(kDeleteId, pl(text::presetDelete) + " " + current);
+        menu.addItem(kDeleteId, pl(text::presetDelete) + " " + deletable);
     }
     juce::Component::SafePointer<PresetBar> self(this);
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&name_), [self, names, current](int picked) {
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&name_), [self, names, deletable](int picked) {
         if (self == nullptr || picked == 0) return;
         if (picked != kDeleteId) {
             self->loadNamed(names[picked - 1]);
             return;
         }
-        if (!self->store_.remove(current)) self->showError(pl(text::presetNoDelete));
+        if (!self->store_.remove(deletable)) self->showError(pl(text::presetNoDelete));
         self->refresh();
     });
 }
 
+juce::String PresetBar::nameToOffer() const { return nameToDelete(); }
+
+juce::String PresetBar::nameToDelete() const {
+    const auto current = store_.plainCurrentName();
+    return store_.isFactory(current) ? juce::String() : current;
+}
+
 void PresetBar::startNaming() {
-    const auto current = store_.currentName();
-    naming_.setText(store_.isFactory(current) ? juce::String() : current, false);
+    naming_.setText(nameToOffer(), false);
     naming_.setBounds(name_.getBounds());
     name_.setVisible(false);
     naming_.setVisible(true);

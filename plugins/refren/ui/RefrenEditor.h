@@ -17,6 +17,7 @@ public:
     StageView& stage();
     wers::ui::PresetBar& presetBar();
     LayerColumn& layerColumn(int layer);
+    juce::Slider& motionSlider();
     void showDetails(bool shown);
     bool detailsShown() const;
     juce::StringArray idsInDetails() const;
