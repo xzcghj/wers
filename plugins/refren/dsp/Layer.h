@@ -9,6 +9,8 @@ namespace refren {
 class Layer {
 public:
     static constexpr int kMaxVoices = 16;
+    // Where a voice stands in a layer of this size, from -1 at the far left to 1 at the far right.
+    static float panShareOf(int index, int count) noexcept;
     void prepare(double fs, uint32_t seed);
     void reset() noexcept;
     // Once per control step. Level, width, time and detune glide to their new values in 20 ms, except right after a

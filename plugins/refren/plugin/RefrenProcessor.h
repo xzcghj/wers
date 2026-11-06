@@ -9,7 +9,8 @@ class RefrenProcessor final : public juce::AudioProcessor {
 public:
     static constexpr int kStateVersion = 1;
 
-    RefrenProcessor();
+    static juce::File defaultPresetFolder();
+    explicit RefrenProcessor(juce::File presetFolder = defaultPresetFolder());
 
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override {}
@@ -37,6 +38,9 @@ public:
 
     juce::AudioProcessorValueTreeState& state() noexcept { return apvts_; }
     wers::ui::PresetStore& presets() noexcept { return presets_; }
+    const juce::File& presetFolder() const noexcept { return presetFolder_; }
+    // Moves what can move without anything going out of tune, starting from the present sound.
+    void randomise(juce::Random& random);
     float maskNow() const noexcept { return engine_.maskNow(); }
     float layerLevelNow(int layer) const noexcept { return engine_.layerLevelNow(layer); }
     int activeVoices(int layer) const noexcept { return engine_.activeVoices(layer); }
@@ -53,6 +57,7 @@ private:
     void processAudio(juce::AudioBuffer<float>& buffer, bool bypassed) noexcept;
     void processChunk(float* const* channels, int count, int n, bool bypassed) noexcept;
 
+    juce::File presetFolder_;
     juce::AudioProcessorValueTreeState apvts_;
     wers::ui::PresetStore presets_;
     std::atomic<float>* pAmount_, *pWidth_, *pTime_, *pTilt_, *pGrain_, *pGrainChar_, *pMotion_, *pMotionRate_, *pMotionDepth_;

@@ -32,11 +32,16 @@ PresetBar::PresetBar(PresetStore& store) : store_(store) {
     refresh();
 }
 
+void PresetBar::setWalkList(const juce::StringArray& names) { walkList_ = names; }
+
 void PresetBar::step(int direction) {
-    const auto names = store_.names();
+    const auto names = walkList_.has_value() ? *walkList_ : store_.names();
     const int size = names.size();
     if (size == 0) return;
-    const int now = names.indexOf(store_.currentName());
+    // A star after the name means the sound has moved on from this preset, which is still where the walk is.
+    auto current = store_.currentName();
+    if (current.endsWithChar('*')) current = current.dropLastCharacters(1);
+    const int now = names.indexOf(current);
     int next = now >= 0 ? now + direction : (direction > 0 ? 0 : size - 1);
     // A file can vanish or get damaged after the list was read. The arrows still get past it.
     for (int tried = 0; tried < size; ++tried, next += direction) {

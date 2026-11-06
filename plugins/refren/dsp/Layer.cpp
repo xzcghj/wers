@@ -63,6 +63,12 @@ void Layer::reset() noexcept {
     }
 }
 
+float Layer::panShareOf(int index, int count) noexcept {
+    // Voices take turns left and right, moving outwards.
+    const float distance = count <= 1 ? 0.0f : static_cast<float>((index / 2) * 2 + (count % 2 == 0 ? 1 : (index % 2 == 0 ? 0 : 2))) / static_cast<float>(count - 1);
+    return (index % 2 == 0 ? -1.0f : 1.0f) * std::min(distance, 1.0f);
+}
+
 void Layer::placeVoices(int count, bool startsAtZero) noexcept {
     // Places in time come in an order of their own, so the earliest voice is not always the leftmost one.
     uint32_t state = seed_ * 40503u + 977u + static_cast<uint32_t>(count);
@@ -77,9 +83,7 @@ void Layer::placeVoices(int count, bool startsAtZero) noexcept {
         auto& v = voice_[static_cast<size_t>(i)];
         const int place = order[static_cast<size_t>(i)];
         v.offsetShare = count == 1 ? 1.0f : earliest + (1.0f - earliest) * static_cast<float>(place) / static_cast<float>(count - 1);
-        // Voices take turns left and right, moving outwards.
-        const float distance = count == 1 ? 0.0f : static_cast<float>((i / 2) * 2 + (count % 2 == 0 ? 1 : (i % 2 == 0 ? 0 : 2))) / static_cast<float>(count - 1);
-        v.panShare = (i % 2 == 0 ? -1.0f : 1.0f) * std::min(distance, 1.0f);
+        v.panShare = panShareOf(i, count);
     }
 }
 

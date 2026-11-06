@@ -5,7 +5,13 @@
 #include "MeasureVoice.h"
 #include "TestSignals.h"
 #include "WavIO.h"
+#include "PresetBar.h"
 #include "plugin/RefrenProcessor.h"
+#include "ui/Favorites.h"
+#include "ui/LayerColumn.h"
+#include "ui/PresetBrowser.h"
+#include "ui/RefrenEditor.h"
+#include "ui/StageView.h"
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
@@ -168,6 +174,12 @@ void onlyTheEcho(RefrenProcessor& p) {
     setParam(p, ids::echoTone, 12000.0f);
     setParam(p, ids::duck, 0.0f);
 }
+
+struct TempFolder {
+    TempFolder() : path(juce::File::createTempFile("refren_screen")) { path.createDirectory(); }
+    ~TempFolder() { path.deleteRecursively(); }
+    juce::File path;
+};
 
 juce::AudioBuffer<float> impulseBuffer(int n) {
     juce::AudioBuffer<float> b(2, n);
@@ -801,14 +813,358 @@ TEST_CASE("the output peak and the level of the layers are there for the screen"
     CHECK(p.maskNow() <= 1.0f);
 }
 
-TEST_CASE("the editor opens and closes") {
-    RefrenProcessor p;
-    p.prepareToPlay(kFs, 256);
-    REQUIRE(p.hasEditor());
-    std::unique_ptr<juce::AudioProcessorEditor> editor(p.createEditor());
-    REQUIRE(editor != nullptr);
-    editor->setSize(400, 300);
-    editor.reset();
+TEST_CASE("editor opens and closes in every state") {
+    TempFolder folder;
+    RefrenProcessor p(folder.path);
+    p.prepareToPlay(kFs, 512);
+    for (float scale : { 1.0f, 1.5f }) {
+        CAPTURE(scale);
+        p.setUiScale(scale);
+        std::unique_ptr<juce::AudioProcessorEditor> window(p.createEditor());
+        auto* editor = dynamic_cast<RefrenEditor*>(window.get());
+        REQUIRE(editor != nullptr);
+        CHECK(window->getWidth() == juce::roundToInt(1040.0f * scale));
+        CHECK(window->getHeight() == juce::roundToInt(680.0f * scale));
+        for (bool details : { false, true }) {
+            editor->showDetails(details);
+            CHECK(editor->detailsShown() == details);
+            for (const auto& group : editor->browser().groupNames()) {
+                editor->browser().showGroup(group);
+                editor->updateNow();
+                CHECK(window->createComponentSnapshot(window->getLocalBounds(), true, 1.0f).isValid());
+            }
+            for (float on : { 1.0f, 0.0f }) {
+                setParam(p, ids::delta, on);
+                setParam(p, ids::bypass, on);
+                auto audio = noiseBuffer(2, 4096, 0.5f);
+                runBlocks(p, audio, 512);
+                editor->updateNow();
+                CHECK(window->createComponentSnapshot(window->getLocalBounds(), true, 1.0f).isValid());
+            }
+        }
+    }
+}
+
+TEST_CASE("groups show their presets") {
+    TempFolder folder;
+    RefrenProcessor p(folder.path);
+    std::unique_ptr<juce::AudioProcessorEditor> window(p.createEditor());
+    auto& browser = dynamic_cast<RefrenEditor&>(*window).browser();
+    CHECK(browser.groupNames().size() == static_cast<int>(kGroups.size()) + 2);
+    // Each group holds exactly its own presets.
+    const auto presets = factoryPresets();
+    for (const auto& group : kGroups) {
+        const auto name = juce::String::fromUTF8(group.name);
+        CAPTURE(name);
+        browser.showGroup(name);
+        CHECK(browser.shownGroup() == name);
+        juce::StringArray wanted;
+        for (const auto& preset : presets)
+            if (std::strcmp(preset.group, group.name) == 0) wanted.add(juce::String::fromUTF8(preset.name));
+        CHECK(browser.shownNames() == wanted);
+    }
+    // Mine are the user's own.
+    const auto mine = juce::String::fromUTF8("Moje");
+    browser.showGroup(mine);
+    CHECK(browser.shownNames().isEmpty());
+    juce::String error;
+    const auto own = juce::String::fromUTF8("Mój pierwszy");
+    REQUIRE(p.presets().save(own, error));
+    browser.showGroup(mine);
+    CHECK(browser.shownNames() == juce::StringArray{ own });
+    // The favourites are the stars that still exist.
+    const auto favourites = juce::String::fromUTF8("Ulubione");
+    const auto loose = juce::String::fromUTF8("Luźny");
+    browser.showGroup(favourites);
+    CHECK(browser.shownNames().isEmpty());
+    browser.toggleStar(loose);
+    browser.toggleStar(own);
+    browser.showGroup(favourites);
+    CHECK(browser.shownNames().size() == 2);
+    REQUIRE(p.presets().remove(own));
+    browser.showGroup(favourites);
+    CHECK(browser.shownNames() == juce::StringArray{ loose });
+    // A star taken away leaves the list at once.
+    browser.toggleStar(loose);
+    CHECK(browser.shownNames().isEmpty());
+    // Choosing a card loads its preset.
+    browser.showGroup(juce::String::fromUTF8(presets[0].group));
+    browser.choose(juce::String::fromUTF8(presets[3].name));
+    CHECK(p.presets().currentName() == juce::String::fromUTF8(presets[3].name));
+}
+
+TEST_CASE("a star stays after reopening") {
+    TempFolder folder;
+    const auto name = juce::String::fromUTF8("Luźny");
+    {
+        Favorites favourites(folder.path);
+        CHECK(favourites.names().isEmpty());
+        CHECK_FALSE(favourites.contains(name));
+    }
+    {
+        RefrenProcessor p(folder.path);
+        std::unique_ptr<juce::AudioProcessorEditor> window(p.createEditor());
+        auto& browser = dynamic_cast<RefrenEditor&>(*window).browser();
+        CHECK_FALSE(browser.hasStar(name));
+        browser.toggleStar(name);
+        CHECK(browser.hasStar(name));
+    }
+    {
+        RefrenProcessor p(folder.path);
+        std::unique_ptr<juce::AudioProcessorEditor> window(p.createEditor());
+        auto& browser = dynamic_cast<RefrenEditor&>(*window).browser();
+        CHECK(browser.hasStar(name));
+        // The file with the stars is no preset.
+        CHECK(folder.path.getChildFile("ulubione.txt").existsAsFile());
+        CHECK(p.presets().userNames().isEmpty());
+        CHECK_FALSE(p.presets().names().contains("ulubione"));
+    }
+    // A folder that cannot be made costs only the memory of the star.
+    const auto blocked = folder.path.getChildFile("to jest plik");
+    REQUIRE(blocked.create().wasOk());
+    Favorites nowhere(blocked.getChildFile("podfolder"));
+    nowhere.toggle(name);
+    CHECK(nowhere.contains(name));
+    nowhere.toggle(name);
+    CHECK_FALSE(nowhere.contains(name));
+}
+
+TEST_CASE("losuj moves only what it may") {
+    TempFolder folder;
+    RefrenProcessor p(folder.path);
+    setParam(p, ids::verbMix, 20.0f);
+    setParam(p, ids::echoMix, 20.0f);
+    setParam(p, ids::tilt, 10.0f);
+    juce::StringArray movable{ ids::width, ids::time, ids::tilt, ids::verbMix, ids::echoMix };
+    for (int k = 0; k < kLayers; ++k) movable.add(layerId(k, ids::detune));
+    const auto before = allValues(p);
+    juce::Random random(7);
+    p.randomise(random);
+    const auto after = allValues(p);
+    int moved = 0;
+    for (const auto& [id, value] : before) {
+        CAPTURE(id);
+        if (movable.contains(id)) {
+            CHECK(after.at(id) >= 0.0f);
+            CHECK(after.at(id) <= 1.0f);
+            if (std::abs(after.at(id) - value) > 1.0e-4f) ++moved;
+        } else {
+            CHECK(after.at(id) == doctest::Approx(value));
+        }
+    }
+    CHECK(moved >= 2);
+    const auto name = juce::String::fromUTF8("Luźny");
+    CHECK(p.presets().currentName() == name + "*");
+    p.randomise(random);
+    CHECK(p.presets().currentName() == name + "*");
+    // The arrows go on from the preset it came from, and a preset takes the star away.
+    wers::ui::PresetBar bar(p.presets());
+    bar.setWalkList(juce::StringArray{ juce::String::fromUTF8("Ciasny"), name, juce::String::fromUTF8("Ręczny") });
+    bar.step(1);
+    CHECK(p.presets().currentName() == juce::String::fromUTF8("Ręczny"));
+    p.randomise(random);
+    REQUIRE(p.presets().load(name));
+    CHECK(p.presets().currentName() == name);
+    // Hundreds of presses stay within every range.
+    for (int round = 0; round < 300; ++round) p.randomise(random);
+    for (const auto& [id, value] : allValues(p)) {
+        CAPTURE(id);
+        CHECK(std::isfinite(value));
+    }
+}
+
+TEST_CASE("arrows walk within the group") {
+    TempFolder folder;
+    RefrenProcessor p(folder.path);
+    std::unique_ptr<juce::AudioProcessorEditor> window(p.createEditor());
+    auto* editor = dynamic_cast<RefrenEditor*>(window.get());
+    auto& browser = editor->browser();
+    juce::String error;
+    REQUIRE(p.presets().save("drugi", error));
+    REQUIRE(p.presets().save("trzeci", error));
+    REQUIRE(p.presets().load(juce::String::fromUTF8("Luźny")));
+    browser.showGroup(juce::String::fromUTF8(kGroups[0].name));
+    const auto group = browser.shownNames();
+    for (int step = 0; step < static_cast<int>(group.size()) * 2 + 3; ++step) {
+        editor->presetBar().step(1);
+        CHECK(group.contains(p.presets().currentName()));
+    }
+    browser.showGroup(juce::String::fromUTF8("Moje"));
+    const auto mine = browser.shownNames();
+    REQUIRE(mine.size() == 2);
+    for (int step = 0; step < 5; ++step) {
+        editor->presetBar().step(-1);
+        CHECK(mine.contains(p.presets().currentName()));
+    }
+    // An empty group gives the arrows nowhere to go.
+    browser.showGroup(juce::String::fromUTF8("Ulubione"));
+    const auto where = p.presets().currentName();
+    editor->presetBar().step(1);
+    CHECK(p.presets().currentName() == where);
+    // Without a list the arrows walk over all presets, which is how Barwa has it.
+    wers::ui::PresetBar plain(p.presets());
+    REQUIRE(p.presets().load(juce::String::fromUTF8("Ciasny")));
+    plain.step(1);
+    CHECK(p.presets().names().contains(p.presets().currentName()));
+    CHECK(p.presets().currentName() != juce::String::fromUTF8("Ciasny"));
+}
+
+TEST_CASE("details show every layer") {
+    TempFolder folder;
+    RefrenProcessor p(folder.path);
+    std::unique_ptr<juce::AudioProcessorEditor> window(p.createEditor());
+    auto* editor = dynamic_cast<RefrenEditor*>(window.get());
+    CHECK_FALSE(editor->detailsShown());
+    CHECK(editor->browser().isVisible());
+    editor->showDetails(true);
+    CHECK(editor->detailsShown());
+    CHECK_FALSE(editor->browser().isVisible());
+    const auto shown = editor->idsInDetails();
+    juce::StringArray wanted{ ids::grainChar, ids::motion, ids::motionRate, ids::echoTime, ids::echoFeedback, ids::echoPing, ids::echoTone, ids::verbSize, ids::verbDecay, ids::verbTone, ids::verbPre, ids::verbShimmer, ids::duck, ids::sendDry, ids::dry, ids::trim };
+    for (int k = 0; k < kLayers; ++k)
+        for (const char* suffix : { ids::on, ids::source, ids::voices, ids::semis, ids::formant, ids::level, ids::layerWidth, ids::layerTime, ids::detune, ids::low, ids::high, ids::note }) wanted.add(layerId(k, suffix));
+    for (const auto& id : wanted) {
+        CAPTURE(id);
+        CHECK(shown.contains(id));
+    }
+    CHECK(shown.size() == wanted.size());
+    // What is on the screen moves what it stands for.
+    setParam(p, layerId(2, ids::voices), 9.0f);
+    editor->updateNow();
+    editor->showDetails(false);
+    CHECK_FALSE(editor->detailsShown());
+    CHECK(editor->browser().isVisible());
+}
+
+TEST_CASE("details dim what does nothing") {
+    TempFolder folder;
+    RefrenProcessor p(folder.path);
+    std::unique_ptr<juce::AudioProcessorEditor> window(p.createEditor());
+    auto* editor = dynamic_cast<RefrenEditor*>(window.get());
+    auto& column = editor->layerColumn(0);
+    const auto dimmed = [&](const char* suffix) { return column.isDimmed(suffix); };
+    const auto source = [&](Source s) { setParam(p, layerId(0, ids::source), static_cast<float>(s)); };
+    REQUIRE(getParam(p, layerId(0, ids::on)) > 0.5f);
+    source(Source::Voice);
+    CHECK_FALSE(dimmed(ids::semis));
+    CHECK_FALSE(dimmed(ids::formant));
+    CHECK(dimmed(ids::note));
+    source(Source::Robot);
+    CHECK(dimmed(ids::semis));
+    CHECK_FALSE(dimmed(ids::formant));
+    CHECK_FALSE(dimmed(ids::note));
+    source(Source::Sub);
+    CHECK_FALSE(dimmed(ids::semis));
+    CHECK(dimmed(ids::formant));
+    CHECK(dimmed(ids::note));
+    source(Source::Whisper);
+    CHECK(dimmed(ids::semis));
+    CHECK(dimmed(ids::formant));
+    CHECK(dimmed(ids::note));
+    CHECK_FALSE(dimmed(ids::level));
+    // A layer that is off has nothing to say, and it can still be set up.
+    setParam(p, layerId(0, ids::on), 0.0f);
+    for (const char* suffix : { ids::voices, ids::level, ids::layerWidth, ids::low }) CHECK(dimmed(suffix));
+    setParam(p, layerId(0, ids::on), 1.0f);
+    CHECK_FALSE(dimmed(ids::level));
+    CHECK(editor->layerColumn(1).isDimmed(ids::level));
+}
+
+TEST_CASE("a layer switched to sub starts an octave down") {
+    TempFolder folder;
+    RefrenProcessor p(folder.path);
+    std::unique_ptr<juce::AudioProcessorEditor> window(p.createEditor());
+    auto* editor = dynamic_cast<RefrenEditor*>(window.get());
+    constexpr int kSub = 2, kVoice = 0;
+    auto& second = editor->layerColumn(1);
+    CHECK(getParam(p, layerId(1, ids::semis)) == doctest::Approx(0.0f));
+    second.pickSource(kSub);
+    CHECK(getParam(p, layerId(1, ids::source)) == doctest::Approx(2.0f));
+    CHECK(getParam(p, layerId(1, ids::semis)) == doctest::Approx(-12.0f));
+    // Another interval stays as it is, also on the way back.
+    second.pickSource(kVoice);
+    CHECK(getParam(p, layerId(1, ids::semis)) == doctest::Approx(-12.0f));
+    auto& third = editor->layerColumn(2);
+    setParam(p, layerId(2, ids::semis), 7.0f);
+    third.pickSource(kSub);
+    CHECK(getParam(p, layerId(2, ids::semis)) == doctest::Approx(7.0f));
+    // A preset or a host saying sub with interval 0 is left alone: this is a help for a hand on the screen.
+    setParam(p, layerId(3, ids::source), 2.0f);
+    editor->updateNow();
+    CHECK(getParam(p, layerId(3, ids::semis)) == doctest::Approx(0.0f));
+}
+
+TEST_CASE("stage shows every voice") {
+    TempFolder folder;
+    RefrenProcessor p(folder.path);
+    p.prepareToPlay(kFs, 512);
+    setParam(p, layerId(0, ids::voices), 3.0f);
+    setParam(p, layerId(1, ids::on), 1.0f);
+    setParam(p, layerId(1, ids::source), 1.0f); // whisper
+    setParam(p, layerId(1, ids::voices), 5.0f);
+    setParam(p, layerId(1, ids::level), -6.0f);
+    std::unique_ptr<juce::AudioProcessorEditor> window(p.createEditor());
+    auto* editor = dynamic_cast<RefrenEditor*>(window.get());
+    auto& stage = editor->stage();
+    const auto play = [&](const std::vector<float>& x, int from, int to) {
+        juce::AudioBuffer<float> audio(2, to - from);
+        audio.copyFrom(0, 0, x.data() + from, to - from);
+        audio.copyFrom(1, 0, x.data() + from, to - from);
+        runBlocks(p, audio, 512);
+        editor->updateNow();
+    };
+    const auto vowel = wers::test::vowel(150.0, -12.0, 48000, kFs);
+    play(vowel, 0, 48000);
+    CHECK(stage.voiceDots() == 8);
+    CHECK(stage.dotCount() == 9); // and the dry voice
+    const float voiceOnVowel = stage.brightnessOf(0), whisperOnVowel = stage.brightnessOf(1);
+    MESSAGE("on a vowel: voice " << voiceOnVowel << ", whisper " << whisperOnVowel);
+    CHECK(voiceOnVowel > 0.3f);
+    CHECK(whisperOnVowel > 0.3f);
+    const auto hiss = wers::test::bandNoise(4000.0, 9000.0, -12.0, 12000, kFs);
+    play(hiss, 0, 12000);
+    MESSAGE("on a sibilant: voice " << stage.brightnessOf(0) << ", whisper " << stage.brightnessOf(1));
+    CHECK(stage.brightnessOf(0) < 0.5f * voiceOnVowel);
+    CHECK(stage.brightnessOf(1) > 0.5f * whisperOnVowel);
+    // Voices that are turned off leave the stage.
+    setParam(p, layerId(1, ids::on), 0.0f);
+    play(vowel, 0, 4800);
+    CHECK(stage.voiceDots() == 3);
+}
+
+TEST_CASE("a typed preset name reaches the store") {
+    TempFolder folder;
+    RefrenProcessor p(folder.path);
+    std::unique_ptr<juce::AudioProcessorEditor> window(p.createEditor());
+    auto* editor = dynamic_cast<RefrenEditor*>(window.get());
+    const auto name = juce::String::fromUTF8("Mój dubel żółty");
+    editor->presetBar().saveAs(name);
+    CHECK(p.presets().currentName() == name);
+    CHECK(p.presets().userNames().contains(name));
+    CHECK(folder.path.getChildFile(name + ".xml").existsAsFile());
+    editor->updateNow();
+    CHECK(editor->presetBar().shownName() == name);
+    editor->browser().showGroup(juce::String::fromUTF8("Moje"));
+    CHECK(editor->browser().shownNames().contains(name));
+}
+
+TEST_CASE("the screen rests when no sound comes") {
+    TempFolder folder;
+    RefrenProcessor p(folder.path);
+    p.prepareToPlay(kFs, 512);
+    std::unique_ptr<juce::AudioProcessorEditor> window(p.createEditor());
+    auto* editor = dynamic_cast<RefrenEditor*>(window.get());
+    auto audio = noiseBuffer(2, 8192, 0.5f);
+    runBlocks(p, audio, 512);
+    editor->updateNow();
+    const int moved = editor->stage().moves();
+    CHECK(moved > 0);
+    for (int tick = 0; tick < 200; ++tick) editor->updateNow();
+    // A few more steps while the last sound fades, then it stops.
+    const int settled = editor->stage().moves();
+    CHECK(settled <= moved + 30);
+    for (int tick = 0; tick < 100; ++tick) editor->updateNow();
+    CHECK(editor->stage().moves() == settled);
 }
 
 TEST_CASE("the measurement file holds only numbers") {

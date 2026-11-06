@@ -71,4 +71,34 @@ inline constexpr const char* sourceWhisper = "Szept";
 inline constexpr const char* sourceSub = "Sub";
 inline constexpr const char* sourceRobot = "Robot";
 
+inline constexpr const char* favorites = "Ulubione";
+inline constexpr const char* mine = "Moje";
+inline constexpr const char* stage = "Scena";
+inline constexpr const char* left = "L";
+inline constexpr const char* right = "P";
+inline constexpr const char* randomise = "Losuj";
+inline constexpr const char* details = "Szczegóły";
+inline constexpr const char* consonantsShort = "Spółgłoski";
+inline constexpr const char* grainCharShort = "Charakter";
+inline constexpr const char* layerWidthShort = "Szerokość";
+inline constexpr const char* layerTimeShort = "Czas";
+
+inline constexpr const char* emptyFavorites = "Tu trafiają presety z gwiazdką. Kliknij gwiazdkę na karcie, żeby dodać pierwszy.";
+inline constexpr const char* emptyMine = "Tu trafiają twoje presety. Ustaw brzmienie i kliknij Zapisz na górze.";
+
+inline constexpr const char* amountTip = "Ile dodanego dźwięku słychać. Przy zerze zostaje sam głos.";
+inline constexpr const char* deltaTip = "Słychać tylko to, co dodaje wtyczka.";
+inline constexpr const char* bypassTip = "Omija wtyczkę. Opóźnienie zostaje takie samo.";
+inline constexpr const char* randomiseTip = "Rusza szerokość, czas, rozstrojenie, ton, pogłos i echo obecnego brzmienia. Interwały i barwy zostają.";
+inline constexpr const char* detailsTip = "Pokazuje wszystkie warstwy i efekty zamiast presetów.";
+inline constexpr const char* widthTip = "Mnoży szerokość wszystkich warstw.";
+inline constexpr const char* timeTip = "Mnoży rozsunięcie głosów w czasie.";
+inline constexpr const char* tiltTip = "Przechyla barwę warstw w stronę dołu albo góry.";
+inline constexpr const char* grainTip = "Nasycenie warstw. Głośność zostaje ta sama.";
+inline constexpr const char* motionTip = "Głębokość ruchu wybranego w szczegółach.";
+inline constexpr const char* verbTip = "Ile pogłosu dochodzi do warstw.";
+inline constexpr const char* echoTip = "Ile echa dochodzi do warstw. Czas idzie za tempem projektu.";
+inline constexpr const char* consonantsTip = "Chowa warstwy na syczących i spółgłoskach, żeby słowa zostały czytelne.";
+inline constexpr const char* outputTip = "Głośność na wyjściu wtyczki.";
+
 } // namespace refren::text

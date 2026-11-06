@@ -9,6 +9,8 @@ class PresetBar final : public juce::Component, private juce::TextEditor::Listen
 public:
     explicit PresetBar(PresetStore& store);
     void step(int direction);
+    // The arrows walk only over these. Until this is called they walk over all presets.
+    void setWalkList(const juce::StringArray& names);
     void pickSlot(int index);
     void copyToOtherSlot();
     void saveAs(const juce::String& name);
@@ -30,6 +32,7 @@ private:
     FlatButton previous_{ "<" }, name_{ "" }, next_{ ">" }, save_{ "" }, slotA_{ "A", FlatButton::Style::Segment }, slotB_{ "B", FlatButton::Style::Segment }, copy_{ "" };
     juce::TextEditor naming_;
     juce::String error_;
+    std::optional<juce::StringArray> walkList_;
     juce::uint32 errorUntil_ = 0;
 };
 

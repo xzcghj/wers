@@ -1,4 +1,5 @@
 #include "RefrenProcessor.h"
+#include "ui/RefrenEditor.h"
 
 namespace refren {
 
@@ -18,12 +19,17 @@ float shareOf(const std::atomic<float>* value) noexcept { return value->load() *
 
 } // namespace
 
-RefrenProcessor::RefrenProcessor()
+juce::File RefrenProcessor::defaultPresetFolder() {
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("WERS").getChildFile("presets").getChildFile("refren");
+}
+
+RefrenProcessor::RefrenProcessor(juce::File presetFolder)
     : AudioProcessor(BusesProperties()
                          .withInput("Input", juce::AudioChannelSet::stereo(), true)
                          .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
+      presetFolder_(std::move(presetFolder)),
       apvts_(*this, nullptr, "REFREN", createParameterLayout()),
-      presets_(apvts_, juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("WERS").getChildFile("presets").getChildFile("refren"), factoryPresets(), presetExcludedIds()) {
+      presets_(apvts_, presetFolder_, factoryPresets(), presetExcludedIds()) {
     const auto value = [this](const juce::String& id) { return apvts_.getRawParameterValue(id); };
     pAmount_ = value(ids::amount);
     pWidth_ = value(ids::width);
@@ -257,7 +263,27 @@ void RefrenProcessor::setStateInformation(const void* data, int size) {
     apvts_.replaceState(tree);
 }
 
-juce::AudioProcessorEditor* RefrenProcessor::createEditor() { return new juce::GenericAudioProcessorEditor(*this); }
+void RefrenProcessor::randomise(juce::Random& random) {
+    const auto move = [&](const juce::String& id, float reach) {
+        auto* parameter = apvts_.getParameter(id);
+        const auto range = apvts_.getParameterRange(id);
+        const float now = range.convertFrom0to1(parameter->getValue());
+        const float next = juce::jlimit(range.start, range.end, now + reach * (random.nextFloat() * 2.0f - 1.0f));
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost(range.convertTo0to1(next));
+        parameter->endChangeGesture();
+    };
+    move(ids::width, 40.0f);
+    move(ids::time, 40.0f);
+    move(ids::tilt, 25.0f);
+    move(ids::verbMix, 12.0f);
+    move(ids::echoMix, 12.0f);
+    for (int k = 0; k < kLayers; ++k) move(layerId(k, ids::detune), 6.0f);
+    const auto name = presets_.currentName();
+    if (name.isNotEmpty() && !name.endsWithChar('*')) presets_.setShownName(name + "*");
+}
+
+juce::AudioProcessorEditor* RefrenProcessor::createEditor() { return new RefrenEditor(*this); }
 
 } // namespace refren
 

@@ -48,7 +48,12 @@ if(WERS_BUILD_PLUGIN)
     target_sources(WersRefren PRIVATE
         plugin/Params.cpp
         plugin/RefrenProcessor.cpp
-        plugin/FactoryPresets.cpp)
+        plugin/FactoryPresets.cpp
+        ui/Favorites.cpp
+        ui/LayerColumn.cpp
+        ui/PresetBrowser.cpp
+        ui/RefrenEditor.cpp
+        ui/StageView.cpp)
     target_include_directories(WersRefren PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/plugin)
     target_link_libraries(WersRefren PRIVATE refren_dsp)
     if(WERS_BUILD_TESTS)
@@ -63,6 +68,8 @@ if(WERS_BUILD_PLUGIN)
             target_compile_definitions(refren_preset_tests PRIVATE REFREN_PRESET_STEP=7)
         endif()
         add_test(NAME refren_preset_tests COMMAND refren_preset_tests)
+        wers_add_plugin_program(WersRefren refren_ui_shots tests/plugin/refren_ui_shots.cpp)
+        target_link_libraries(refren_ui_shots PRIVATE wers_test_support)
         # Sets how loud each factory preset is. Run by hand when presets change.
         wers_add_plugin_program(WersRefren refren_trim tools/refren_trim.cpp)
         target_link_libraries(refren_trim PRIVATE wers_test_support)

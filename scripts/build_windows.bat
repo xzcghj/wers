@@ -41,7 +41,7 @@ if not errorlevel 1 (
     if errorlevel 1 ( echo FAILED configure>> "%STATUS%" & goto end )
     echo build !TIME!>> "%STATUS%"
     echo   Kompilacja...
-    cmake --build "%BUILD%" --config Release --parallel --target wers_tests wers_dsp_tests wers_plugin_tests wers_ui_shots wers_cli wers_whisper WERS_VST3 WersProbe_VST3 barwa_tests barwa_plugin_tests barwa_ui_shots barwa_measure WersBarwa_VST3 refren_tests refren_render refren_plugin_tests refren_preset_tests refren_measure WersRefren_VST3 -- /m /nologo /v:m > "%LOGS%\build.log" 2>&1
+    cmake --build "%BUILD%" --config Release --parallel --target wers_tests wers_dsp_tests wers_plugin_tests wers_ui_shots wers_cli wers_whisper WERS_VST3 WersProbe_VST3 barwa_tests barwa_plugin_tests barwa_ui_shots barwa_measure WersBarwa_VST3 refren_tests refren_render refren_plugin_tests refren_preset_tests refren_ui_shots refren_measure WersRefren_VST3 -- /m /nologo /v:m > "%LOGS%\build.log" 2>&1
     if errorlevel 1 ( echo FAILED build>> "%STATUS%" & goto end )
     echo PASSED build !TIME!>> "%STATUS%"
     if exist "%ROOT%\WERS.vst3" rmdir /s /q "%ROOT%\WERS.vst3"
@@ -75,6 +75,9 @@ if not errorlevel 1 (
     if errorlevel 1 ( echo FAILED refren plugin tests>> "%STATUS%" ) else ( echo PASSED refren plugin tests>> "%STATUS%" )
     "%BUILD%\plugins\refren\Release\refren_preset_tests.exe" > "%LOGS%\refren_preset_tests.log" 2>&1
     if errorlevel 1 ( echo FAILED refren preset tests>> "%STATUS%" ) else ( echo PASSED refren preset tests>> "%STATUS%" )
+    if not exist "%LOGS%\refren_shots" mkdir "%LOGS%\refren_shots"
+    "%BUILD%\plugins\refren\Release\refren_ui_shots.exe" "%LOGS%\refren_shots" > "%LOGS%\refren_shots.log" 2>&1
+    if errorlevel 1 ( echo FAILED refren ui shots>> "%STATUS%" ) else ( echo PASSED refren ui shots>> "%STATUS%" )
     if exist "%ROOT%\testdata\vocal_dry.wav" (
         if not exist "%LOGS%\shots" mkdir "%LOGS%\shots"
         "%BUILD%\plugins\wers\plugin\Release\wers_ui_shots.exe" "%LOGS%\shots" "%ROOT%\testdata\vocal_dry.wav" "%ROOT%\testdata\beat.wav" > "%LOGS%\shots.log" 2>&1
