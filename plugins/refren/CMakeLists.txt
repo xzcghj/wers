@@ -1,8 +1,12 @@
 # WERS Refren: doubles, crews, choirs and effects from one vocal track, with words that stay clear.
 add_library(refren_dsp STATIC
+    dsp/Echo.cpp
+    dsp/Grain.cpp
     dsp/Layer.cpp
+    dsp/MotionFx.cpp
     dsp/Psola.cpp
     dsp/RefrenEngine.cpp
+    dsp/Reverb.cpp
     dsp/SubVoice.cpp
     dsp/VoiceAnalysis.cpp
     dsp/VoiceMask.cpp
@@ -28,6 +32,7 @@ if(WERS_BUILD_TESTS)
         tests/test_psola.cpp
         tests/test_sources.cpp
         tests/test_layers.cpp
+        tests/test_bus.cpp
     )
     target_include_directories(refren_tests PRIVATE ${doctest_SOURCE_DIR}/doctest ${CMAKE_CURRENT_SOURCE_DIR}/tests)
     target_link_libraries(refren_tests PRIVATE refren_dsp refren_tools_lib wers_test_support)

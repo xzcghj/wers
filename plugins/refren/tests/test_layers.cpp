@@ -575,6 +575,27 @@ TEST_CASE("fuzz never poisons") {
         p.widthScale = any(0.0f, 3.0f);
         p.timeScale = any(0.0f, 3.0f);
         p.consonants = round % 13 == 0 ? std::numeric_limits<float>::infinity() : any(0.0f, 1.0f);
+        p.tilt = any(-2.0f, 2.0f);
+        p.grainDb = round % 19 == 0 ? std::numeric_limits<float>::quiet_NaN() : any(-10.0f, 60.0f);
+        p.grainChar = static_cast<Character>(random() % 4);
+        p.motion = static_cast<Motion>(random() % 4);
+        p.motionRate = any(-5.0f, 50.0f);
+        p.motionDepth = any(-1.0f, 2.0f);
+        p.echoMix = any(-1.0f, 2.0f);
+        p.echoTime = static_cast<EchoTime>(random() % 7);
+        p.echoFeedback = any(-1.0f, 3.0f);
+        p.echoPing = random() % 2 == 0;
+        p.echoToneHz = any(-100.0f, 90000.0f);
+        p.verbMix = any(-1.0f, 2.0f);
+        p.verbSize = any(-1.0f, 2.0f);
+        p.verbDecay = round % 23 == 0 ? std::numeric_limits<float>::infinity() : any(-1.0f, 100.0f);
+        p.verbToneHz = any(-100.0f, 90000.0f);
+        p.verbPreMs = any(-10.0f, 500.0f);
+        p.verbShimmer = any(-1.0f, 3.0f);
+        p.duck = any(-1.0f, 2.0f);
+        p.sendDry = any(-1.0f, 2.0f);
+        p.trimDb = any(-100.0f, 100.0f);
+        engine.setTempo(round % 11 == 0 ? std::numeric_limits<double>::quiet_NaN() : round % 7 == 0 ? 1.0e12 : static_cast<double>(any(-100.0f, 1000.0f)));
         for (auto& l : p.layer) {
             l.on = random() % 2 == 0;
             l.source = static_cast<Source>(random() % 4);
@@ -618,6 +639,13 @@ TEST_CASE("audio thread never allocates") {
     p.layer[1].semis = 12;
     p.layer[2].source = Source::Whisper;
     p.layer[3].source = Source::Sub;
+    p.grainDb = 12.0f;
+    p.tilt = 0.2f;
+    p.motion = Motion::Flanger;
+    p.motionDepth = 0.5f;
+    p.echoMix = 0.3f;
+    p.verbMix = 0.3f;
+    p.verbShimmer = 0.5f;
     RefrenEngine engine;
     engine.prepare(kFs);
     engine.setParams(p);
@@ -626,7 +654,16 @@ TEST_CASE("audio thread never allocates") {
     AllocationCounter counter;
     for (size_t from = 0; from + 256 <= x.size(); from += 256) {
         p.layer[0].levelDb = -12.0f + static_cast<float>(from % 4096) / 1024.0f;
-        if (from % 19200 == 0) p.layer[1].semis = p.layer[1].semis == 12 ? 7 : 12;
+        p.verbDecay = 1.0f + static_cast<float>(from % 4096) / 1024.0f;
+        p.echoToneHz = 2000.0f + static_cast<float>(from % 4096);
+        if (from % 19200 == 0) {
+            p.layer[1].semis = p.layer[1].semis == 12 ? 7 : 12;
+            p.verbSize = p.verbSize == 0.5f ? 0.9f : 0.5f;
+            p.grainChar = p.grainChar == Character::Lamp ? Character::Tape : Character::Lamp;
+            p.motion = p.motion == Motion::Flanger ? Motion::Autopan : Motion::Flanger;
+            p.echoTime = p.echoTime == EchoTime::Eighth ? EchoTime::Quarter : EchoTime::Eighth;
+            p.echoMix = p.echoMix > 0.0f ? 0.0f : 0.3f;
+        }
         engine.setParams(p);
         float* channels[] = { x.data() + from, scratch.data() + from };
         engine.process(channels, 2, 256);

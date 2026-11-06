@@ -2,9 +2,14 @@
 // The whole sound of Refren: the dry voice, a fixed delay of 30 ms, up to four layers made from the mono sum of the
 // input, and what they go through together. At an amount of zero the dry voice passes untouched. All memory is
 // allocated in prepare(), and process() neither allocates nor locks.
+#include "Echo.h"
+#include "Grain.h"
 #include "Layer.h"
+#include "MotionFx.h"
 #include "Psola.h"
+#include "Reverb.h"
 #include "SubVoice.h"
+#include "Tone.h"
 #include "VoiceMask.h"
 #include "WhisperVoice.h"
 #include <atomic>
@@ -38,6 +43,7 @@ private:
     void controlTick() noexcept;
     void applyStructure() noexcept;
     bool structureChanged() const noexcept;
+    float duckTarget() noexcept;
 
     double fs_ = 48000.0, bpm_ = 120.0;
     int latency_ = 1440, shiftedDelay_ = 1389, controlStep_ = 32, controlLeft_ = 0, settleTicks_ = 15;
@@ -50,11 +56,24 @@ private:
     WhisperVoice whisper_;
     wers::DelayLine maskedDelay_;
     std::array<LayerAudio, 4> layers_;
-    std::array<wers::DelayLine, 2> dryDelay_, busDelay_;
+    std::array<wers::DelayLine, 2> dryDelay_;
+    Grain grain_;
+    std::array<wers::Tilt, 2> tilt_;
+    MotionFx motion_;
+    Echo echo_;
+    Reverb reverb_;
+    Character appliedCharacter_ = Character::Lamp;
+    Motion appliedMotion_ = Motion::None;
+    EchoTime appliedEchoTime_ = EchoTime::Eighth;
+    bool appliedPing_ = false, echoOn_ = false, verbOn_ = false;
+    float appliedSize_ = 0.5f;
     wers::Gate gate_;
     wers::Ramp gateRamp_, amountRamp_, dryRamp_, trimRamp_, outputRamp_;
     float amount_ = 1.0f, dryDb_ = 0.0f, trimDb_ = 0.0f, outputDb_ = 0.0f, consonants_ = 1.0f, deltaShare_ = 0.0f;
-    wers::Ramp dryShareRamp_;
+    float tiltNow_ = 0.0f, echoMix_ = 0.0f, verbMix_ = 0.0f, verbDecay_ = 1.5f, send_ = 0.0f, duckAmount_ = 0.0f, duckGain_ = 1.0f;
+    double envPower_ = 0.0, refPower_ = 1.0e-6, envAttack_ = 0.1, envRelease_ = 0.01, refFall_ = 0.001;
+    float duckAttack_ = 0.1f, duckRelease_ = 0.01f;
+    wers::Ramp dryShareRamp_, echoMixRamp_, verbMixRamp_, sendRamp_, duckRamp_;
     std::atomic<float> maskNow_{ 1.0f };
     std::array<std::atomic<float>, 4> layerLevel_{};
     std::array<std::atomic<int>, 4> activeVoices_{};

@@ -5,6 +5,8 @@ namespace refren {
 namespace {
 
 constexpr double kLatencySeconds = 0.030, kSmoothSeconds = 0.02, kGateSeconds = 0.02, kSettleSeconds = 0.01, kMeterSeconds = 0.05;
+constexpr double kEnvAttackSeconds = 0.005, kEnvReleaseSeconds = 0.04, kRefFallSeconds = 4.0, kDuckAttackSeconds = 0.01, kDuckReleaseSeconds = 0.3;
+constexpr float kDuckDepthDb = 18.0f;
 constexpr int kOversamplingLatency = 49, kShortestRead = 2, kAllVoices = 32;
 constexpr float kInputLimit = 64.0f; // anything beyond +36 dBFS is not audio
 
@@ -73,6 +75,11 @@ void RefrenEngine::prepare(double fs) {
     gateStep_ = static_cast<float>(1.0 / (kGateSeconds * controlRate));
     settleTicks_ = std::max(1, static_cast<int>(std::lround(kSettleSeconds * controlRate)));
     meterFall_ = static_cast<float>(1.0 - wers::onePoleCoeff(kMeterSeconds, controlRate));
+    envAttack_ = wers::onePoleCoeff(kEnvAttackSeconds, fs);
+    envRelease_ = wers::onePoleCoeff(kEnvReleaseSeconds, fs);
+    refFall_ = wers::onePoleCoeff(kRefFallSeconds, controlRate);
+    duckAttack_ = static_cast<float>(wers::onePoleCoeff(kDuckAttackSeconds, controlRate));
+    duckRelease_ = static_cast<float>(wers::onePoleCoeff(kDuckReleaseSeconds, controlRate));
 
     voice_.prepare(fs);
     mask_.prepare(fs);
@@ -86,7 +93,11 @@ void RefrenEngine::prepare(double fs) {
         l.sub.prepare(fs, shiftedDelay_);
     }
     for (auto& d : dryDelay_) d.prepare(latency_);
-    for (auto& d : busDelay_) d.prepare(kOversamplingLatency);
+    grain_.prepare(fs);
+    for (auto& t : tilt_) t.prepare(fs);
+    motion_.prepare(fs);
+    echo_.prepare(fs);
+    reverb_.prepare(fs);
     reset();
 }
 
@@ -104,7 +115,15 @@ void RefrenEngine::reset() noexcept {
         l.loudest = 0.0f;
     }
     for (auto& d : dryDelay_) d.reset();
-    for (auto& d : busDelay_) d.reset();
+    grain_.reset();
+    for (auto& t : tilt_) t.reset();
+    motion_.reset();
+    echo_.reset();
+    reverb_.reset();
+    echoOn_ = verbOn_ = false;
+    envPower_ = 0.0;
+    refPower_ = 1.0e-6;
+    duckGain_ = 1.0f;
     gate_.openNow();
     gateRamp_.set(1.0f);
     snapPending_ = true;
@@ -120,7 +139,15 @@ void RefrenEngine::setParams(const RefrenParams& params) noexcept {
 bool RefrenEngine::structureChanged() const noexcept {
     for (size_t k = 0; k < layers_.size(); ++k)
         if (!sameStructure(wanted_.layer[k], layers_[k].applied)) return true;
-    return false;
+    return wanted_.grainChar != appliedCharacter_ || wanted_.motion != appliedMotion_ || wanted_.echoTime != appliedEchoTime_ || wanted_.echoPing != appliedPing_ || wanted_.verbSize != appliedSize_;
+}
+
+float RefrenEngine::duckTarget() noexcept {
+    refPower_ = envPower_ > refPower_ ? envPower_ : refPower_ + (envPower_ - refPower_) * refFall_;
+    // 1 under words, 0 in the gaps, against the recent level of the voice.
+    const float relative = wers::powerToDb((envPower_ + 1.0e-12) / (refPower_ + 1.0e-12));
+    const float activity = std::clamp((relative + 24.0f) / 12.0f, 0.0f, 1.0f);
+    return 1.0f - (1.0f - wers::dbToGain(-kDuckDepthDb * duckAmount_)) * activity;
 }
 
 void RefrenEngine::applyStructure() noexcept {
@@ -169,6 +196,15 @@ void RefrenEngine::applyStructure() noexcept {
     }
     if (whisperNeeded && !anyWhisper_) whisper_.reset();
     anyWhisper_ = whisperNeeded;
+    appliedCharacter_ = wanted_.grainChar;
+    appliedMotion_ = wanted_.motion;
+    appliedEchoTime_ = wanted_.echoTime;
+    appliedPing_ = wanted_.echoPing;
+    appliedSize_ = wanted_.verbSize;
+    // A new sound starts with an empty room. When they are off, they get cleared as they come back on.
+    grain_.reset();
+    if (echoOn_) echo_.reset();
+    if (verbOn_) reverb_.reset();
 }
 
 void RefrenEngine::controlTick() noexcept {
@@ -182,6 +218,13 @@ void RefrenEngine::controlTick() noexcept {
         outputDb_ = wanted_.outputDb;
         consonants_ = wanted_.consonants;
         deltaShare_ = wanted_.delta ? 1.0f : 0.0f;
+        tiltNow_ = wanted_.tilt;
+        for (auto& t : tilt_) t.set(tiltNow_);
+        echoMix_ = wanted_.echoMix;
+        verbMix_ = wanted_.verbMix;
+        verbDecay_ = wanted_.verbDecay;
+        send_ = wanted_.sendDry;
+        duckAmount_ = wanted_.duck;
     } else {
         if (gate_.advance(structureChanged(), gateStep_, settleTicks_)) applyStructure();
         amount_ = approach(amount_, wanted_.amount, smooth_, 1.0e-5f);
@@ -190,8 +233,31 @@ void RefrenEngine::controlTick() noexcept {
         outputDb_ = approach(outputDb_, wanted_.outputDb, smooth_, 1.0e-3f);
         consonants_ = approach(consonants_, wanted_.consonants, smooth_, 1.0e-5f);
         deltaShare_ = approach(deltaShare_, wanted_.delta ? 1.0f : 0.0f, smooth_, 1.0e-5f);
+        const float tilt = approach(tiltNow_, wanted_.tilt, smooth_, 1.0e-4f);
+        if (tilt != tiltNow_) {
+            tiltNow_ = tilt;
+            for (auto& t : tilt_) t.set(tilt);
+        }
+        echoMix_ = approach(echoMix_, wanted_.echoMix, smooth_, 1.0e-5f);
+        verbMix_ = approach(verbMix_, wanted_.verbMix, smooth_, 1.0e-5f);
+        verbDecay_ = approach(verbDecay_, wanted_.verbDecay, smooth_, 1.0e-3f);
+        send_ = approach(send_, wanted_.sendDry, smooth_, 1.0e-5f);
+        duckAmount_ = approach(duckAmount_, wanted_.duck, smooth_, 1.0e-5f);
     }
     mask_.setAmount(consonants_);
+    grain_.set(wanted_.grainDb, appliedCharacter_);
+    motion_.set(appliedMotion_, wanted_.motionRate, wanted_.motionDepth);
+    const bool echoWanted = echoMix_ > 0.0f || echoMixRamp_.now > 0.0f;
+    if (echoWanted && !echoOn_) echo_.reset();
+    echoOn_ = echoWanted;
+    echo_.set(appliedEchoTime_, wanted_.echoFeedback, appliedPing_, wanted_.echoToneHz, bpm_);
+    const bool verbWanted = verbMix_ > 0.0f || verbMixRamp_.now > 0.0f;
+    if (verbWanted && !verbOn_) reverb_.reset();
+    verbOn_ = verbWanted;
+    reverb_.set(appliedSize_, verbDecay_, wanted_.verbToneHz, wanted_.verbPreMs, wanted_.verbShimmer);
+    const float duckWanted = duckTarget();
+    duckGain_ += (duckWanted - duckGain_) * (duckWanted < duckGain_ ? duckAttack_ : duckRelease_);
+    if (snap) duckGain_ = duckWanted;
     const float dryGain = wers::dbToGain(dryDb_), trimGain = wers::dbToGain(trimDb_), outputGain = wers::dbToGain(outputDb_);
     if (snap) {
         gateRamp_.set(gate_.level);
@@ -200,6 +266,10 @@ void RefrenEngine::controlTick() noexcept {
         trimRamp_.set(trimGain);
         outputRamp_.set(outputGain);
         dryShareRamp_.set(1.0f - deltaShare_);
+        echoMixRamp_.set(echoMix_);
+        verbMixRamp_.set(verbMix_);
+        sendRamp_.set(send_);
+        duckRamp_.set(duckGain_);
     } else {
         gateRamp_.aim(gate_.level, perSample_);
         amountRamp_.aim(amount_, perSample_);
@@ -207,6 +277,10 @@ void RefrenEngine::controlTick() noexcept {
         trimRamp_.aim(trimGain, perSample_);
         outputRamp_.aim(outputGain, perSample_);
         dryShareRamp_.aim(1.0f - deltaShare_, perSample_);
+        echoMixRamp_.aim(echoMix_, perSample_);
+        verbMixRamp_.aim(verbMix_, perSample_);
+        sendRamp_.aim(send_, perSample_);
+        duckRamp_.aim(duckGain_, perSample_);
     }
     for (size_t k = 0; k < layers_.size(); ++k) {
         auto& l = layers_[k];
@@ -252,6 +326,8 @@ void RefrenEngine::process(float* const* channels, int numChannels, int numSampl
         const float masked = maskedDelay_.process(mono) * open;
         const float openShifted = mask_.delayed(shiftedMaskDelay);
         const float whispered = anyWhisper_ ? whisper_.tick(mono) : 0.0f;
+        const double power = static_cast<double>(mono) * mono;
+        envPower_ += (power - envPower_) * (power > envPower_ ? envAttack_ : envRelease_);
 
         float wetLeft = 0.0f, wetRight = 0.0f;
         for (auto& l : layers_) {
@@ -267,9 +343,28 @@ void RefrenEngine::process(float* const* channels, int numChannels, int numSampl
             l.loudest = std::max(l.loudest, std::abs(filtered));
             l.layer.tick(filtered, wetLeft, wetRight);
         }
-        // What the layers go through together comes here.
-        wetLeft = busDelay_[0].process(wetLeft);
-        wetRight = busDelay_[1].process(wetRight);
+        grain_.tick(wetLeft, wetRight);
+        wetLeft = static_cast<float>(tilt_[0].tick(static_cast<double>(wetLeft)));
+        wetRight = static_cast<float>(tilt_[1].tick(static_cast<double>(wetRight)));
+        motion_.tick(wetLeft, wetRight);
+
+        const float dryLeft = dryDelay_[0].process(in[0]);
+        const float dryRight = count == 2 ? dryDelay_[1].process(in[1]) : dryLeft;
+        if (echoOn_ || verbOn_) {
+            const float intoLeft = wetLeft + sendRamp_.now * dryLeft, intoRight = wetRight + sendRamp_.now * dryRight;
+            const float duck = duckRamp_.now;
+            float outLeft = 0.0f, outRight = 0.0f;
+            if (echoOn_) {
+                echo_.tick(intoLeft, intoRight, outLeft, outRight);
+                wetLeft += echoMixRamp_.now * duck * outLeft;
+                wetRight += echoMixRamp_.now * duck * outRight;
+            }
+            if (verbOn_) {
+                reverb_.tick(intoLeft, intoRight, outLeft, outRight);
+                wetLeft += verbMixRamp_.now * duck * outLeft;
+                wetRight += verbMixRamp_.now * duck * outRight;
+            }
+        }
 
         const float gate = gateRamp_.now, amount = amountRamp_.now;
         const float dryGain = 1.0f + amount * (dryRamp_.now - 1.0f);
@@ -277,10 +372,10 @@ void RefrenEngine::process(float* const* channels, int numChannels, int numSampl
         const float last = trim * outputRamp_.now;
         const float keepDry = dryShareRamp_.now;
         if (count == 2) {
-            channels[0][i] = (keepDry * dryGain * dryDelay_[0].process(in[0]) + amount * gate * wetLeft) * last;
-            channels[1][i] = (keepDry * dryGain * dryDelay_[1].process(in[1]) + amount * gate * wetRight) * last;
+            channels[0][i] = (keepDry * dryGain * dryLeft + amount * gate * wetLeft) * last;
+            channels[1][i] = (keepDry * dryGain * dryRight + amount * gate * wetRight) * last;
         } else {
-            channels[0][i] = (keepDry * dryGain * dryDelay_[0].process(in[0]) + amount * gate * 0.5f * (wetLeft + wetRight)) * last;
+            channels[0][i] = (keepDry * dryGain * dryLeft + amount * gate * 0.5f * (wetLeft + wetRight)) * last;
         }
         gateRamp_.now += gateRamp_.step;
         amountRamp_.now += amountRamp_.step;
@@ -288,6 +383,10 @@ void RefrenEngine::process(float* const* channels, int numChannels, int numSampl
         trimRamp_.now += trimRamp_.step;
         outputRamp_.now += outputRamp_.step;
         dryShareRamp_.now += dryShareRamp_.step;
+        echoMixRamp_.now += echoMixRamp_.step;
+        verbMixRamp_.now += verbMixRamp_.step;
+        sendRamp_.now += sendRamp_.step;
+        duckRamp_.now += duckRamp_.step;
     }
 }
 
