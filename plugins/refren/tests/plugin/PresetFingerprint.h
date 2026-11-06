@@ -9,6 +9,10 @@ namespace refren {
 
 struct Fingerprint {
     double width = 0.0, low = 0.0, high = 0.0, tailMs = 0.0, motion = 0.0, half = 0.0, twice = 0.0, density = 0.0;
+    // The level of the loudest layer at each interval from -24 to +24, from the settings. An interval adds few new
+    // frequencies to a voice, and a shift that keeps the formants adds none where this phrase has nothing to lift, so
+    // two different harmonies would measure the same. Nobody hears them as the same.
+    std::array<float, 49> intervalDb{};
 };
 
 namespace fingerprint {
@@ -19,6 +23,7 @@ inline constexpr double kGateSeconds = 0.2, kPhraseSeconds = 3.0, kMostTailSecon
 
 // These differences can be heard. They are not lowered to let a preset through: the preset changes instead.
 inline constexpr double kWidthDb = 2.0, kLowDb = 1.5, kHighDb = 1.5, kTailMs = 100.0, kMotionDb = 1.5, kHalfDb = 3.0, kTwiceDb = 3.0, kDensityShare = 0.2;
+inline constexpr float kNoLayerDb = -60.0f, kIntervalDb = 6.0f;
 
 inline double toDb(double power) { return 10.0 * std::log10(power + 1.0e-30); }
 
@@ -85,7 +90,7 @@ inline Fingerprint measureFingerprintOfCurrent(RefrenProcessor& p) {
     f.half = shareOfBand(60.0, 90.0);
     f.twice = shareOfBand(240.0, 360.0);
 
-    // Until the sound falls 30 dB under the end of the phrase.
+    // Until the sound has fallen 30 dB under the end of the phrase for good, so an echo after a gap still counts.
     const auto levelOf = [&](int from, int length) {
         double energy = 0.0;
         for (int c = 0; c < 2; ++c)
@@ -94,13 +99,9 @@ inline Fingerprint measureFingerprintOfCurrent(RefrenProcessor& p) {
     };
     const double lastOfPhrase = levelOf(end - static_cast<int>(0.2 * kFs), static_cast<int>(0.2 * kFs));
     const int window = static_cast<int>(0.05 * kFs);
-    f.tailMs = kMostTailSeconds * 1000.0;
-    for (int i = end; i + window <= total; i += window / 5) {
-        if (levelOf(i, window) <= lastOfPhrase - 30.0) {
-            f.tailMs = 1000.0 * (i - end) / kFs;
-            break;
-        }
-    }
+    f.tailMs = 0.0;
+    for (int i = end; i + window <= total; i += window / 5)
+        if (levelOf(i, window) > lastOfPhrase - 30.0) f.tailMs = 1000.0 * (i + window / 5 - end) / kFs;
 
     // How much the level of the sides moves around.
     const int moving = static_cast<int>(0.1 * kFs);
@@ -132,6 +133,18 @@ inline Fingerprint measureFingerprintOfCurrent(RefrenProcessor& p) {
         if (highest && envelope[static_cast<size_t>(i)] - lowest >= 3.0) ++peaks;
     }
     f.density = peaks / kPhraseSeconds;
+
+    f.intervalDb.fill(kNoLayerDb);
+    auto& state = p.state();
+    for (int k = 0; k < kLayers; ++k) {
+        if (state.getRawParameterValue(layerId(k, ids::on))->load() < 0.5f) continue;
+        const auto source = static_cast<Source>(juce::roundToInt(state.getRawParameterValue(layerId(k, ids::source))->load()));
+        if (source != Source::Voice && source != Source::Sub) continue;
+        const int semis = juce::roundToInt(state.getRawParameterValue(layerId(k, ids::semis))->load());
+        auto& slot = f.intervalDb[static_cast<size_t>(juce::jlimit(0, 48, semis + 24))];
+        slot = juce::jmax(slot, state.getRawParameterValue(layerId(k, ids::level))->load());
+    }
+    f.intervalDb[24] = kNoLayerDb; // the voice itself is no harmony
     return f;
 }
 
@@ -143,6 +156,8 @@ inline Fingerprint measureFingerprint(RefrenProcessor& p, const juce::String& pr
 // Nothing tells them apart.
 inline bool tooSimilar(const Fingerprint& a, const Fingerprint& b) {
     using namespace fingerprint;
+    for (size_t k = 0; k < a.intervalDb.size(); ++k)
+        if (std::abs(a.intervalDb[k] - b.intervalDb[k]) > kIntervalDb) return false;
     return std::abs(a.width - b.width) <= kWidthDb && std::abs(a.low - b.low) <= kLowDb && std::abs(a.high - b.high) <= kHighDb && std::abs(a.tailMs - b.tailMs) <= kTailMs
         && std::abs(a.motion - b.motion) <= kMotionDb && std::abs(a.half - b.half) <= kHalfDb && std::abs(a.twice - b.twice) <= kTwiceDb
         && std::abs(a.density - b.density) <= kDensityShare * juce::jmax(a.density, b.density, 1.0);

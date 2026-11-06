@@ -247,6 +247,30 @@ TEST_CASE("fingerprint tells presets apart") {
     const auto longer = withChange(ids::verbDecay, 1.8f);
     MESSAGE("tail from " << longer.first.tailMs << " to " << longer.second.tailMs << " ms");
     CHECK_FALSE(tooSimilar(longer.first, longer.second));
+    // Another harmony is another preset.
+    RefrenProcessor plain, withFifth;
+    plain.presets().load(name);
+    withFifth.presets().load(name);
+    setParam(plain, layerId(1, ids::on), 1.0f);
+    setParam(plain, layerId(1, ids::semis), 5.0f);
+    setParam(plain, layerId(1, ids::level), -18.0f);
+    setParam(withFifth, layerId(1, ids::on), 1.0f);
+    setParam(withFifth, layerId(1, ids::semis), 7.0f);
+    setParam(withFifth, layerId(1, ids::level), -18.0f);
+    CHECK_FALSE(tooSimilar(measureFingerprintOfCurrent(plain), measureFingerprintOfCurrent(withFifth)));
+    // And an echo after a gap counts in the tail.
+    RefrenProcessor dryOne, withEcho;
+    dryOne.presets().load(name);
+    withEcho.presets().load(name);
+    setParam(withEcho, ids::echoMix, 50.0f);
+    setParam(withEcho, ids::echoTime, 5.0f);
+    setParam(withEcho, ids::echoFeedback, 0.0f);
+    setParam(withEcho, ids::sendDry, 100.0f);
+    setParam(withEcho, ids::duck, 0.0f);
+    const auto echoed = measureFingerprintOfCurrent(withEcho);
+    MESSAGE("tail with an echo after a second: " << echoed.tailMs << " ms");
+    CHECK(echoed.tailMs > 900.0);
+    CHECK_FALSE(tooSimilar(measureFingerprintOfCurrent(dryOne), echoed));
 }
 
 TEST_CASE("loading a preset does not click") {

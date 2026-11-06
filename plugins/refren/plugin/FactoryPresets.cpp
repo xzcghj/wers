@@ -179,6 +179,48 @@ std::vector<wers::ui::FactoryPreset> factoryPresets() {
         .add("Chór w oddali", "Odległy chór, prawie bez głosu z przodu.", { { .count = 16, .time = 35.0f, .width = 100.0f, .low = 300.0f, .high = 6000.0f, .level = -10.0f } }, { .verb = 70.0f, .decay = 4.0f, .dry = -24.0f })
         .add("Kwinty w chórze", "Chór z kwintą w górę i kwartą w dół.", { { .count = 12, .time = 30.0f, .width = 100.0f, .level = -10.0f }, { .count = 12, .semis = 7, .time = 20.0f, .width = 100.0f, .level = -14.0f }, { .count = 8, .semis = -5, .time = 20.0f, .width = 100.0f, .level = -14.0f } }, { .verb = 45.0f, .decay = 4.0f, .dry = -6.0f })
         .add("Pełny chór", "Cztery warstwy: głos, oktawy i kwinta.", { { .count = 8, .time = 30.0f, .width = 100.0f, .level = -10.0f }, { .count = 8, .semis = 12, .time = 20.0f, .width = 100.0f, .level = -16.0f }, { .count = 8, .semis = -12, .time = 20.0f, .width = 100.0f, .level = -14.0f }, { .count = 8, .semis = 7, .time = 20.0f, .width = 100.0f, .level = -16.0f } }, { .verb = 50.0f, .decay = 5.0f, .dry = -6.0f });
+    b.group("Głęboki")
+        .add("Sub pod głosem", "Czysty ton oktawę pod głosem, który daje dół bez barwy.", { { .source = Source::Sub, .count = 1, .semis = -12, .level = -8.0f } })
+        .add("Demon", "Oktawa w dół z ciemną barwą i ziarnem, suchy głos schowany.", { { .semis = -12, .formant = -3.0f, .time = 4.0f, .width = 30.0f, .level = -4.0f } }, { .grain = 10.0f, .character = Character::Transformer, .dry = -15.0f })
+        .add("Olbrzym", "Wielki, ciemny głos w dużej przestrzeni.", { { .count = 3, .semis = -12, .formant = -5.0f, .time = 8.0f, .level = -4.0f } }, { .verb = 20.0f, .decay = 1.2f, .dry = -18.0f })
+        .add("Oktawa w dół", "Jeden głos oktawę niżej, równo z tobą.", { { .count = 1, .semis = -12, .time = 0.0f, .width = 0.0f, .level = -6.0f } })
+        .add("Dwie oktawy w dół", "Dwie oktawy pod głosem, z subem na dnie.", { { .count = 1, .semis = -24, .time = 0.0f, .width = 0.0f, .level = -8.0f }, { .source = Source::Sub, .count = 1, .semis = -12, .level = -12.0f } }, { .dry = -9.0f })
+        .add("Bas pod spodem", "Sam dół dwóch niskich głosów i sub, reszta zostaje czysta.", { { .semis = -12, .time = 6.0f, .width = 40.0f, .low = 40.0f, .high = 1000.0f, .level = -6.0f }, { .source = Source::Sub, .count = 1, .semis = -12, .level = -14.0f } })
+        .add("Niski i szeroki", "Cztery głosy oktawę niżej, szeroko po bokach.", { { .count = 4, .semis = -12, .time = 12.0f, .width = 100.0f, .level = -7.0f } })
+        .add("Ciemny głos", "Ten sam głos z ciemniejszą barwą, bez zmiany wysokości.", { { .count = 1, .formant = -4.0f, .time = 0.0f, .width = 0.0f, .level = -3.0f } }, { .dry = -18.0f })
+        .add("Potwór", "Kwinta w dół, bardzo ciemna barwa i mocny przester.", { { .semis = -7, .formant = -6.0f, .time = 6.0f, .width = 40.0f, .level = -3.0f } }, { .grain = 16.0f, .character = Character::Transistor, .dry = -24.0f })
+        .add("Sub i echo", "Sub pod głosem i echo na ćwierćnuty.", { { .source = Source::Sub, .count = 1, .semis = -12, .level = -8.0f } }, { .echo = 30.0f, .echoTime = EchoTime::Quarter, .feedback = 30.0f });
+    b.group("Wysoki")
+        .add("Anioły", "Jasne głosy oktawę wyżej w długim pogłosie.", { { .count = 6, .semis = 12, .formant = 2.0f, .time = 16.0f, .width = 100.0f, .level = -10.0f } }, { .verb = 40.0f, .decay = 3.0f, .dry = -6.0f })
+        .add("Hyperpop", "Wysoki, nasycony głos prawie bez oryginału.", { { .semis = 12, .formant = 3.0f, .time = 2.0f, .width = 40.0f, .level = -4.0f } }, { .grain = 10.0f, .character = Character::Transistor, .tilt = 20.0f, .dry = -30.0f })
+        .add("Chipmunk", "Sam głos oktawę wyżej i z wysoką barwą.", { { .count = 1, .semis = 12, .formant = 6.0f, .time = 0.0f, .width = 0.0f, .level = -3.0f } }, { .dry = -48.0f })
+        .add("Oktawa w górę", "Jeden głos oktawę wyżej, równo z tobą.", { { .count = 1, .semis = 12, .time = 0.0f, .width = 0.0f, .level = -8.0f } })
+        .add("Dwie oktawy w górę", "Cichy głos dwie oktawy nad tobą.", { { .count = 1, .semis = 24, .time = 0.0f, .width = 0.0f, .level = -12.0f } })
+        .add("Szklany", "Sama góra oktawy wyżej, rozpływająca się w pogłosie.", { { .count = 4, .semis = 12, .time = 10.0f, .width = 100.0f, .low = 2000.0f, .level = -12.0f } }, { .verb = 35.0f, .decay = 2.5f, .shimmer = 30.0f })
+        .add("Jasna oktawa", "Cztery jasne głosy oktawę wyżej, bez dołu.", { { .count = 4, .semis = 12, .formant = 4.0f, .time = 10.0f, .width = 90.0f, .low = 800.0f, .level = -12.0f } })
+        .add("Cienki głos", "Ten sam głos z jaśniejszą barwą, bez zmiany wysokości.", { { .count = 1, .formant = 5.0f, .time = 0.0f, .width = 0.0f, .level = -3.0f } }, { .dry = -18.0f })
+        .add("Piskliwy", "Dwa bardzo wysokie głosy nad tobą.", { { .semis = 19, .formant = 4.0f, .time = 4.0f, .width = 60.0f, .level = -14.0f } })
+        .add("Lekka oktawa", "Ledwie słyszalna oktawa, która rozjaśnia głos.", { { .count = 3, .semis = 12, .time = 6.0f, .width = 70.0f, .level = -20.0f } });
+    b.group("Harmonie")
+        .add("Kwinta", "Dwa głosy o kwintę wyżej.", { { .semis = 7, .time = 4.0f, .level = -10.0f } })
+        .add("Oktawy", "Oktawa w górę i oktawa w dół.", { { .semis = 12, .time = 4.0f, .width = 60.0f, .level = -14.0f }, { .semis = -12, .time = 4.0f, .width = 40.0f, .level = -12.0f } })
+        .add("Kwarta w tle", "Cicha kwarta rozłożona po bokach.", { { .semis = 5, .time = 10.0f, .width = 80.0f, .level = -14.0f } })
+        .add("Kwinta w dół", "Dwa głosy o kwintę niżej.", { { .semis = -7, .time = 4.0f, .level = -10.0f } })
+        .add("Kwarta w dół", "Dwa głosy o kwartę niżej.", { { .semis = -5, .time = 4.0f, .level = -10.0f } })
+        .add("Kwinta i oktawa", "Kwinta i oktawa nad głosem.", { { .semis = 7, .time = 6.0f, .width = 70.0f, .level = -12.0f }, { .semis = 12, .time = 6.0f, .width = 90.0f, .level = -14.0f } })
+        .add("Pusty akord", "Kwinta w górę i oktawa w dół.", { { .semis = 7, .time = 4.0f, .width = 60.0f, .level = -10.0f }, { .semis = -12, .time = 4.0f, .width = 30.0f, .level = -10.0f } })
+        .add("Szeroka harmonia", "Oktawy i kwinta po cztery głosy, szeroko.", { { .count = 4, .semis = 12, .time = 18.0f, .width = 100.0f, .level = -16.0f }, { .count = 4, .semis = -12, .time = 18.0f, .width = 100.0f, .level = -14.0f }, { .count = 4, .semis = 7, .time = 18.0f, .width = 100.0f, .level = -16.0f } })
+        .add("Kwarta i kwinta", "Kwarta i kwinta nad głosem, szeroko.", { { .semis = 5, .time = 6.0f, .width = 90.0f, .level = -13.0f }, { .semis = 7, .time = 6.0f, .width = 90.0f, .level = -13.0f } })
+        .add("Organy", "Cztery równe, nieruchome składowe jak w organach.", { { .count = 1, .semis = -12, .time = 0.0f, .detune = 0.0f, .level = -10.0f }, { .count = 1, .semis = 7, .time = 0.0f, .detune = 0.0f, .level = -14.0f }, { .count = 1, .semis = 12, .time = 0.0f, .detune = 0.0f, .level = -14.0f }, { .count = 1, .semis = 19, .time = 0.0f, .detune = 0.0f, .level = -18.0f } });
+    b.group("Szept")
+        .add("Szept obok", "Ten sam tekst szeptem, tuż przy głosie.", { { .source = Source::Whisper, .count = 1, .time = 8.0f, .level = -8.0f } })
+        .add("Oddech", "Sama góra szeptu, jak oddech wokół głosu.", { { .source = Source::Whisper, .time = 16.0f, .width = 60.0f, .low = 2000.0f, .level = -12.0f } })
+        .add("W głowie", "Szepty dookoła, a głos prawie znika.", { { .source = Source::Whisper, .count = 4, .time = 20.0f, .width = 100.0f, .level = -9.0f } }, { .verb = 15.0f, .decay = 0.4f, .size = 20.0f, .dry = -18.0f })
+        .add("Szept i głos", "Dubel głosu i szept szeroko po bokach.", { { .time = 10.0f, .width = 60.0f, .level = -12.0f }, { .source = Source::Whisper, .time = 14.0f, .width = 100.0f, .level = -10.0f } })
+        .add("Duch", "Szept w długim pogłosie, bez głosu z przodu.", { { .source = Source::Whisper, .count = 3, .time = 30.0f, .width = 100.0f, .level = -6.0f } }, { .verb = 50.0f, .decay = 3.0f, .dry = -30.0f })
+        .add("Szept w tle", "Cichy, szeroki szept za głosem.", { { .source = Source::Whisper, .count = 4, .time = 30.0f, .width = 100.0f, .level = -15.0f } })
+        .add("Szept z echem", "Szept odbijający się od lewej do prawej.", { { .source = Source::Whisper, .time = 10.0f, .width = 60.0f, .level = -10.0f } }, { .echo = 35.0f, .feedback = 40.0f, .ping = true })
+        .add("Sam szept", "Tylko szept, bez głosu.", { { .source = Source::Whisper, .count = 1, .time = 0.0f, .width = 0.0f, .level = -3.0f } }, { .dry = -48.0f });
     return b.take();
 }
 

@@ -13,6 +13,10 @@ inline constexpr std::array kGroups{
     PresetGroup{ "Refren", 12 },
     PresetGroup{ "Ekipa", 10 },
     PresetGroup{ "Chór", 10 },
+    PresetGroup{ "Głęboki", 10 },
+    PresetGroup{ "Wysoki", 10 },
+    PresetGroup{ "Harmonie", 10 },
+    PresetGroup{ "Szept", 8 },
 };
 
 std::vector<wers::ui::FactoryPreset> factoryPresets();
