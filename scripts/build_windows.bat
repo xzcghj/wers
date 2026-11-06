@@ -19,6 +19,7 @@ echo.
 set BUILD=%ROOT%\build
 set VST=%BUILD%\plugins\wers\plugin\WERS_artefacts\Release\VST3\WERS.vst3
 set "BARWA=%BUILD%\plugins\barwa\WersBarwa_artefacts\Release\VST3\WERS Barwa.vst3"
+set "REFREN=%BUILD%\plugins\refren\WersRefren_artefacts\Release\VST3\WERS Refren.vst3"
 where cmake >nul 2>nul || set "PATH=C:\Program Files\CMake\bin;%PATH%"
 where git >nul 2>nul || set "PATH=C:\Program Files\Git\cmd;%PATH%"
 
@@ -40,13 +41,15 @@ if not errorlevel 1 (
     if errorlevel 1 ( echo FAILED configure>> "%STATUS%" & goto end )
     echo build !TIME!>> "%STATUS%"
     echo   Kompilacja...
-    cmake --build "%BUILD%" --config Release --parallel --target wers_tests wers_dsp_tests wers_plugin_tests wers_ui_shots wers_cli wers_whisper WERS_VST3 WersProbe_VST3 barwa_tests barwa_plugin_tests barwa_ui_shots barwa_measure WersBarwa_VST3 refren_tests refren_render -- /m /nologo /v:m > "%LOGS%\build.log" 2>&1
+    cmake --build "%BUILD%" --config Release --parallel --target wers_tests wers_dsp_tests wers_plugin_tests wers_ui_shots wers_cli wers_whisper WERS_VST3 WersProbe_VST3 barwa_tests barwa_plugin_tests barwa_ui_shots barwa_measure WersBarwa_VST3 refren_tests refren_render refren_plugin_tests refren_measure WersRefren_VST3 -- /m /nologo /v:m > "%LOGS%\build.log" 2>&1
     if errorlevel 1 ( echo FAILED build>> "%STATUS%" & goto end )
     echo PASSED build !TIME!>> "%STATUS%"
     if exist "%ROOT%\WERS.vst3" rmdir /s /q "%ROOT%\WERS.vst3"
     xcopy /e /i /q /y "%VST%" "%ROOT%\WERS.vst3" >> "%LOGS%\tools.log" 2>&1
     if exist "%ROOT%\WERS Barwa.vst3" rmdir /s /q "%ROOT%\WERS Barwa.vst3"
     xcopy /e /i /q /y "%BARWA%" "%ROOT%\WERS Barwa.vst3" >> "%LOGS%\tools.log" 2>&1
+    if exist "%ROOT%\WERS Refren.vst3" rmdir /s /q "%ROOT%\WERS Refren.vst3"
+    xcopy /e /i /q /y "%REFREN%" "%ROOT%\WERS Refren.vst3" >> "%LOGS%\tools.log" 2>&1
 )
 
 echo %JOB% | findstr /c:"tests" >nul
@@ -68,6 +71,8 @@ if not errorlevel 1 (
     if errorlevel 1 ( echo FAILED barwa ui shots>> "%STATUS%" ) else ( echo PASSED barwa ui shots>> "%STATUS%" )
     "%BUILD%\plugins\refren\Release\refren_tests.exe" > "%LOGS%\refren_tests.log" 2>&1
     if errorlevel 1 ( echo FAILED refren tests>> "%STATUS%" ) else ( echo PASSED refren tests>> "%STATUS%" )
+    "%BUILD%\plugins\refren\Release\refren_plugin_tests.exe" > "%LOGS%\refren_plugin_tests.log" 2>&1
+    if errorlevel 1 ( echo FAILED refren plugin tests>> "%STATUS%" ) else ( echo PASSED refren plugin tests>> "%STATUS%" )
     if exist "%ROOT%\testdata\vocal_dry.wav" (
         if not exist "%LOGS%\shots" mkdir "%LOGS%\shots"
         "%BUILD%\plugins\wers\plugin\Release\wers_ui_shots.exe" "%LOGS%\shots" "%ROOT%\testdata\vocal_dry.wav" "%ROOT%\testdata\beat.wav" > "%LOGS%\shots.log" 2>&1
@@ -90,6 +95,8 @@ if not errorlevel 1 (
         if errorlevel 1 ( echo FAILED pluginval>> "%STATUS%" ) else ( echo PASSED pluginval>> "%STATUS%" )
         "%ROOT%\tools\pluginval.exe" --validate-in-process --strictness-level 10 --timeout-ms 600000 "%BARWA%" > "%LOGS%\pluginval_barwa.log" 2>&1
         if errorlevel 1 ( echo FAILED pluginval barwa>> "%STATUS%" ) else ( echo PASSED pluginval barwa>> "%STATUS%" )
+        "%ROOT%\tools\pluginval.exe" --validate-in-process --strictness-level 10 --timeout-ms 600000 "%REFREN%" > "%LOGS%\pluginval_refren.log" 2>&1
+        if errorlevel 1 ( echo FAILED pluginval refren>> "%STATUS%" ) else ( echo PASSED pluginval refren>> "%STATUS%" )
     ) else (
         echo FAILED pluginval download>> "%STATUS%"
     )
@@ -120,6 +127,17 @@ if not errorlevel 1 (
     if exist "%LOGS%\refren_probe" rmdir /s /q "%LOGS%\refren_probe"
     "%BUILD%\plugins\refren\Release\refren_render.exe" --list "%ROOT%\refren_list.txt" --out "%LOGS%\refren_probe" > "%LOGS%\refren_render.log" 2>&1
     if errorlevel 1 ( echo FAILED refren render>> "%STATUS%" ) else ( echo PASSED refren render !TIME!>> "%STATUS%" )
+)
+
+echo %JOB% | findstr /c:"refrenstats" >nul
+if not errorlevel 1 (
+    rem Numbers from the vocals named in refren_list.txt and the load on the processor. Only numbers are written.
+    echo refren stats !TIME!>> "%STATUS%"
+    echo   Pomiary Refrenu...
+    "%BUILD%\plugins\refren\Release\refren_measure.exe" --list "%ROOT%\refren_list.txt" --out "%LOGS%\refren_measure.tsv" > "%LOGS%\refren_measure.log" 2>&1
+    if errorlevel 1 ( echo FAILED refren measure>> "%STATUS%" ) else ( echo PASSED refren measure !TIME!>> "%STATUS%" )
+    "%BUILD%\plugins\refren\Release\refren_measure.exe" --cpu > "%LOGS%\refren_cpu.log" 2>&1
+    if errorlevel 1 ( echo FAILED refren cpu>> "%STATUS%" ) else ( echo PASSED refren cpu>> "%STATUS%" )
 )
 
 echo %JOB% | findstr /c:"model" >nul
@@ -167,6 +185,15 @@ if not errorlevel 1 (
         if exist "!TARGET!\WERS Barwa.vst3" rmdir /s /q "!TARGET!\WERS Barwa.vst3"
         xcopy /e /i /q /y "%BARWA%" "!TARGET!\WERS Barwa.vst3" >> "%LOGS%\tools.log" 2>&1
         if errorlevel 1 ( echo FAILED install barwa>> "%STATUS%" ) else ( echo PASSED install barwa !TARGET!>> "%STATUS%" )
+    )
+    tasklist /m "WERS Refren.vst3" 2>nul | findstr /i ".exe" >nul
+    if not errorlevel 1 (
+        echo SKIPPED install refren: WERS Refren is loaded in a running program>> "%STATUS%"
+        echo   Nowa wersja Refrenu gotowa, ale Refren jest wczytany w DAW. Stara wersja zostaje bez zmian.
+    ) else (
+        if exist "!TARGET!\WERS Refren.vst3" rmdir /s /q "!TARGET!\WERS Refren.vst3"
+        xcopy /e /i /q /y "%REFREN%" "!TARGET!\WERS Refren.vst3" >> "%LOGS%\tools.log" 2>&1
+        if errorlevel 1 ( echo FAILED install refren>> "%STATUS%" ) else ( echo PASSED install refren !TARGET!>> "%STATUS%" )
     )
 )
 

@@ -12,6 +12,7 @@ set "TARGET=%CommonProgramFiles%\VST3"
 if not exist "%TARGET%" mkdir "%TARGET%"
 call :install "WERS.vst3"
 call :install "WERS Barwa.vst3"
+call :install "WERS Refren.vst3"
 echo W DAW uruchom ponowne skanowanie wtyczek.
 pause
 endlocal

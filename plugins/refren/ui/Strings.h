@@ -1,0 +1,74 @@
+#pragma once
+// All text of Refren in one file, so another language is a simple addition later.
+namespace refren::text {
+
+inline constexpr const char* amount = "Ile";
+inline constexpr const char* width = "Szerokość";
+inline constexpr const char* time = "Czas";
+inline constexpr const char* tilt = "Ton";
+inline constexpr const char* grain = "Ziarno";
+inline constexpr const char* grainChar = "Charakter ziarna";
+inline constexpr const char* motion = "Rodzaj ruchu";
+inline constexpr const char* motionRate = "Tempo ruchu";
+inline constexpr const char* motionDepth = "Ruch";
+inline constexpr const char* echoMix = "Echo";
+inline constexpr const char* echoTime = "Czas echa";
+inline constexpr const char* echoFeedback = "Sprzężenie echa";
+inline constexpr const char* echoPing = "Ping-pong";
+inline constexpr const char* echoTone = "Góra echa";
+inline constexpr const char* verbMix = "Pogłos";
+inline constexpr const char* verbSize = "Rozmiar";
+inline constexpr const char* verbDecay = "Czas pogłosu";
+inline constexpr const char* verbTone = "Góra pogłosu";
+inline constexpr const char* verbPre = "Predelay";
+inline constexpr const char* verbShimmer = "Shimmer";
+inline constexpr const char* duck = "Chowanie";
+inline constexpr const char* sendDry = "Wysyłka suchego";
+inline constexpr const char* consonants = "Spółgłoski w środku";
+inline constexpr const char* dry = "Suchy";
+inline constexpr const char* trim = "Wyrównanie";
+inline constexpr const char* output = "Output";
+inline constexpr const char* delta = "Delta";
+inline constexpr const char* bypass = "Bypass";
+
+inline constexpr const char* layer = "Warstwa";
+inline constexpr const char* layerOn = "włączona";
+inline constexpr const char* layerSource = "Źródło";
+inline constexpr const char* layerVoices = "Głosy";
+inline constexpr const char* layerSemis = "Interwał";
+inline constexpr const char* layerFormant = "Barwa głosu";
+inline constexpr const char* layerLevel = "Poziom";
+inline constexpr const char* layerWidth = "Szerokość warstwy";
+inline constexpr const char* layerTime = "Czas warstwy";
+inline constexpr const char* layerDetune = "Rozstrojenie";
+inline constexpr const char* layerLow = "Filtr górny";
+inline constexpr const char* layerHigh = "Filtr dolny";
+inline constexpr const char* layerNote = "Nuta";
+
+inline constexpr const char* switchOn = "wł";
+inline constexpr const char* switchOff = "wył";
+
+inline constexpr const char* lamp = "Lampa";
+inline constexpr const char* tape = "Taśma";
+inline constexpr const char* transformer = "Transformator";
+inline constexpr const char* transistor = "Tranzystor";
+
+inline constexpr const char* motionNone = "Brak";
+inline constexpr const char* motionAutopan = "Autopan";
+inline constexpr const char* motionTremolo = "Tremolo";
+inline constexpr const char* motionFlanger = "Flanger";
+
+inline constexpr const char* echoSixteenth = "1/16";
+inline constexpr const char* echoEighth = "1/8";
+inline constexpr const char* echoDottedEighth = "1/8 z kropką";
+inline constexpr const char* echoQuarter = "1/4";
+inline constexpr const char* echoDottedQuarter = "1/4 z kropką";
+inline constexpr const char* echoHalf = "1/2";
+inline constexpr const char* echoSlap = "Slap 80 ms";
+
+inline constexpr const char* sourceVoice = "Głos";
+inline constexpr const char* sourceWhisper = "Szept";
+inline constexpr const char* sourceSub = "Sub";
+inline constexpr const char* sourceRobot = "Robot";
+
+} // namespace refren::text
