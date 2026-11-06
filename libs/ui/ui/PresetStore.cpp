@@ -25,9 +25,12 @@ juce::File PresetStore::fileFor(const juce::String& name) const {
     return folder_.getChildFile(name + ".xml");
 }
 
-bool PresetStore::isFactory(const juce::String& name) const {
-    return std::any_of(factory_.begin(), factory_.end(), [&](const FactoryPreset& p) { return polish(p.name) == name; });
+const FactoryPreset* PresetStore::factoryInfo(const juce::String& name) const {
+    const auto found = std::find_if(factory_.begin(), factory_.end(), [&](const FactoryPreset& p) { return polish(p.name) == name; });
+    return found != factory_.end() ? &*found : nullptr;
 }
+
+bool PresetStore::isFactory(const juce::String& name) const { return factoryInfo(name) != nullptr; }
 
 std::optional<PresetStore::Values> PresetStore::readFile(const juce::File& file) const {
     if (!file.existsAsFile() || file.getSize() > kMaxFileBytes) return std::nullopt;
@@ -41,15 +44,20 @@ std::optional<PresetStore::Values> PresetStore::readFile(const juce::File& file)
     return values;
 }
 
-juce::StringArray PresetStore::names() const {
-    juce::StringArray all, own;
-    for (const auto& preset : factory_) all.add(polish(preset.name));
+juce::StringArray PresetStore::userNames() const {
+    juce::StringArray own;
     for (const auto& file : folder_.findChildFiles(juce::File::findFiles, false, "*.xml")) {
         const auto name = file.getFileNameWithoutExtension();
-        if (!all.contains(name) && readFile(file).has_value()) own.add(name);
+        if (!isFactory(name) && readFile(file).has_value()) own.add(name);
     }
     own.sortNatural();
-    all.addArray(own);
+    return own;
+}
+
+juce::StringArray PresetStore::names() const {
+    juce::StringArray all;
+    for (const auto& preset : factory_) all.add(polish(preset.name));
+    all.addArray(userNames());
     return all;
 }
 
@@ -134,6 +142,11 @@ bool PresetStore::remove(const juce::String& name) {
 juce::String PresetStore::currentName() const {
     const juce::ScopedLock lock(lock_);
     return current_;
+}
+
+void PresetStore::setShownName(const juce::String& name) {
+    const juce::ScopedLock lock(lock_);
+    current_ = name;
 }
 
 void PresetStore::storeSlot(int index) {

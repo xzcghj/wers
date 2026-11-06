@@ -8,6 +8,8 @@ namespace wers::ui {
 struct FactoryPreset {
     const char* name;
     std::vector<std::pair<const char*, float>> values; // what differs from the neutral default
+    const char* group = nullptr;
+    const char* description = nullptr;
 };
 
 // The presets and the two comparison slots of one plugin. Presets are XML files in the user's folder,
@@ -19,10 +21,16 @@ public:
     // Factory presets first, then the user's own by name. Damaged and foreign files are left out.
     juce::StringArray names() const;
     bool isFactory(const juce::String& name) const;
+    // Null for anything but a factory preset.
+    const FactoryPreset* factoryInfo(const juce::String& name) const;
+    // The user's own presets only.
+    juce::StringArray userNames() const;
     bool load(const juce::String& name);
     bool save(const juce::String& name, juce::String& error);
     bool remove(const juce::String& name);
     juce::String currentName() const;
+    // For a sound that has moved on from the preset it was loaded from.
+    void setShownName(const juce::String& name);
 
     void storeSlot(int index);
     void recallSlot(int index);

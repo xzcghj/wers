@@ -47,12 +47,24 @@ if(WERS_BUILD_PLUGIN)
     wers_add_plugin(WersRefren PRODUCT "WERS Refren" CODE Wrfn BUNDLE "app.wers.refren" CATEGORIES Fx Modulation)
     target_sources(WersRefren PRIVATE
         plugin/Params.cpp
-        plugin/RefrenProcessor.cpp)
+        plugin/RefrenProcessor.cpp
+        plugin/FactoryPresets.cpp)
     target_include_directories(WersRefren PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/plugin)
     target_link_libraries(WersRefren PRIVATE refren_dsp)
     if(WERS_BUILD_TESTS)
         wers_add_plugin_program(WersRefren refren_plugin_tests tests/plugin/refren_plugin_tests.cpp)
         target_link_libraries(refren_plugin_tests PRIVATE refren_tools_lib wers_test_support)
         add_test(NAME refren_plugin_tests COMMAND refren_plugin_tests)
+        wers_add_plugin_program(WersRefren refren_preset_tests tests/plugin/refren_preset_tests.cpp)
+        target_include_directories(refren_preset_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/plugin)
+        target_link_libraries(refren_preset_tests PRIVATE wers_test_support)
+        if(WERS_SANITIZE)
+            # A slow build tries every seventh preset. Without sanitizers every preset is tried.
+            target_compile_definitions(refren_preset_tests PRIVATE REFREN_PRESET_STEP=7)
+        endif()
+        add_test(NAME refren_preset_tests COMMAND refren_preset_tests)
+        # Sets how loud each factory preset is. Run by hand when presets change.
+        wers_add_plugin_program(WersRefren refren_trim tools/refren_trim.cpp)
+        target_link_libraries(refren_trim PRIVATE wers_test_support)
     endif()
 endif()

@@ -7,6 +7,7 @@ namespace {
 constexpr juce::uint32 kStateMagic = 0x4E465257u; // "WRFN" in the file
 constexpr double kBypassSeconds = 0.01, kTailSeconds = 10.0;
 constexpr int kHeaderBytes = 12;
+constexpr const char* kFirstPreset = "Luźny";
 
 template <typename Enum>
 Enum choiceOf(const std::atomic<float>* value, int last) noexcept {
@@ -22,8 +23,7 @@ RefrenProcessor::RefrenProcessor()
                          .withInput("Input", juce::AudioChannelSet::stereo(), true)
                          .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       apvts_(*this, nullptr, "REFREN", createParameterLayout()),
-      presets_(apvts_, juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("WERS").getChildFile("presets").getChildFile("refren"), {},
-               { ids::amount, ids::output, ids::delta, ids::bypass }) {
+      presets_(apvts_, juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("WERS").getChildFile("presets").getChildFile("refren"), factoryPresets(), presetExcludedIds()) {
     const auto value = [this](const juce::String& id) { return apvts_.getRawParameterValue(id); };
     pAmount_ = value(ids::amount);
     pWidth_ = value(ids::width);
@@ -68,6 +68,7 @@ RefrenProcessor::RefrenProcessor()
         l.high = value(layerId(k, ids::high));
         l.note = value(layerId(k, ids::note));
     }
+    presets_.load(juce::String::fromUTF8(kFirstPreset)); // a project replaces it right after
     dry_.setSize(2, kChunk);
     prepareAll();
     setLatencySamples(engine_.latencySamples());
