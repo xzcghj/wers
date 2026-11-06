@@ -1,11 +1,15 @@
 // Sets how loud each factory preset is: measures it with the trim at zero and writes what brings it to the level of the
 // voice that goes in, from two phrases, one quiet and one loud.
 //   refren_trim <path of PresetTrims.inc>
+// Or says what each one costs, and fails above the limit of the series:
+//   refren_trim --load
 #include "FactoryPresets.h"
 #include "RefrenProcessor.h"
 #include "TestSignals.h"
 #include "Measure.h"
+#include <chrono>
 #include <cstdio>
+#include <cstring>
 
 namespace {
 
@@ -31,14 +35,51 @@ double errorDb(refren::RefrenProcessor& p, double peak) {
     return output - wers::test::weightedDb(x, settled, n - late, kFs);
 }
 
+constexpr double kLoadLimitPercent = 5.0, kLoadSeconds = 10.0;
+
+// The best of three runs of a voice-like phrase, in the way refren_measure does it for the heaviest settings.
+int measureLoad() {
+    const auto left = wers::test::loudPhrase(kFs, kLoadSeconds, -6.0, 5u), right = wers::test::loudPhrase(kFs, kLoadSeconds, -6.0, 9u);
+    const int n = static_cast<int>(left.size());
+    double worst = 0.0;
+    juce::String worstName;
+    for (const auto& preset : refren::factoryPresets()) {
+        refren::RefrenProcessor p;
+        const auto name = juce::String::fromUTF8(preset.name);
+        if (!p.presets().load(name)) return 1;
+        double best = 1.0e9;
+        for (int round = 0; round < 3; ++round) {
+            p.prepareToPlay(kFs, 256);
+            juce::AudioBuffer<float> audio(2, n);
+            audio.copyFrom(0, 0, left.data(), n);
+            audio.copyFrom(1, 0, right.data(), n);
+            juce::MidiBuffer midi;
+            const auto start = std::chrono::steady_clock::now();
+            for (int from = 0; from + 256 <= n; from += 256) {
+                juce::AudioBuffer<float> view(audio.getArrayOfWritePointers(), 2, from, 256);
+                p.processBlock(view, midi);
+            }
+            best = juce::jmin(best, std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
+        }
+        const double percent = 100.0 * best / kLoadSeconds;
+        if (percent > worst) {
+            worst = percent;
+            worstName = name;
+        }
+    }
+    std::printf("heaviest preset: %.2f %% of one core, limit %.2f %%\n", worst, kLoadLimitPercent);
+    return worst <= kLoadLimitPercent ? 0 : 1;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     if (argc != 2) {
-        std::printf("usage: refren_trim <path of PresetTrims.inc>\n");
+        std::printf("usage: refren_trim <path of PresetTrims.inc> | --load\n");
         return 2;
     }
     juce::ScopedJuceInitialiser_GUI juceInit;
+    if (std::strcmp(argv[1], "--load") == 0) return measureLoad();
     juce::String text;
     int outOfRange = 0;
     for (const auto& preset : refren::factoryPresets()) {

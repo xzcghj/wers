@@ -13,6 +13,8 @@ struct Fingerprint {
     // frequencies to a voice, and a shift that keeps the formants adds none where this phrase has nothing to lift, so
     // two different harmonies would measure the same. Nobody hears them as the same.
     std::array<float, 49> intervalDb{};
+    // The same for a voice held on one note, from C2 to C5.
+    std::array<float, 37> noteDb{};
 };
 
 namespace fingerprint {
@@ -135,10 +137,16 @@ inline Fingerprint measureFingerprintOfCurrent(RefrenProcessor& p) {
     f.density = peaks / kPhraseSeconds;
 
     f.intervalDb.fill(kNoLayerDb);
+    f.noteDb.fill(kNoLayerDb);
     auto& state = p.state();
     for (int k = 0; k < kLayers; ++k) {
         if (state.getRawParameterValue(layerId(k, ids::on))->load() < 0.5f) continue;
         const auto source = static_cast<Source>(juce::roundToInt(state.getRawParameterValue(layerId(k, ids::source))->load()));
+        if (source == Source::Robot) {
+            const int note = juce::roundToInt(state.getRawParameterValue(layerId(k, ids::note))->load());
+            auto& slot = f.noteDb[static_cast<size_t>(juce::jlimit(0, 36, note - 36))];
+            slot = juce::jmax(slot, state.getRawParameterValue(layerId(k, ids::level))->load());
+        }
         if (source != Source::Voice && source != Source::Sub) continue;
         const int semis = juce::roundToInt(state.getRawParameterValue(layerId(k, ids::semis))->load());
         auto& slot = f.intervalDb[static_cast<size_t>(juce::jlimit(0, 48, semis + 24))];
@@ -158,6 +166,8 @@ inline bool tooSimilar(const Fingerprint& a, const Fingerprint& b) {
     using namespace fingerprint;
     for (size_t k = 0; k < a.intervalDb.size(); ++k)
         if (std::abs(a.intervalDb[k] - b.intervalDb[k]) > kIntervalDb) return false;
+    for (size_t k = 0; k < a.noteDb.size(); ++k)
+        if (std::abs(a.noteDb[k] - b.noteDb[k]) > kIntervalDb) return false;
     return std::abs(a.width - b.width) <= kWidthDb && std::abs(a.low - b.low) <= kLowDb && std::abs(a.high - b.high) <= kHighDb && std::abs(a.tailMs - b.tailMs) <= kTailMs
         && std::abs(a.motion - b.motion) <= kMotionDb && std::abs(a.half - b.half) <= kHalfDb && std::abs(a.twice - b.twice) <= kTwiceDb
         && std::abs(a.density - b.density) <= kDensityShare * juce::jmax(a.density, b.density, 1.0);

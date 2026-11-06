@@ -129,6 +129,8 @@ TEST_CASE("groups hold enough presets") {
         CHECK(count >= group.atLeast);
     }
     MESSAGE(presets.size() << " presets in " << kGroups.size() << " groups");
+    CHECK(presets.size() >= 120);
+    CHECK(kGroups.size() == 12);
 }
 
 TEST_CASE("amount zero is neutral on every preset") {

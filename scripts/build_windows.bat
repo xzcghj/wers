@@ -41,7 +41,7 @@ if not errorlevel 1 (
     if errorlevel 1 ( echo FAILED configure>> "%STATUS%" & goto end )
     echo build !TIME!>> "%STATUS%"
     echo   Kompilacja...
-    cmake --build "%BUILD%" --config Release --parallel --target wers_tests wers_dsp_tests wers_plugin_tests wers_ui_shots wers_cli wers_whisper WERS_VST3 WersProbe_VST3 barwa_tests barwa_plugin_tests barwa_ui_shots barwa_measure WersBarwa_VST3 refren_tests refren_render refren_plugin_tests refren_preset_tests refren_ui_shots refren_measure WersRefren_VST3 -- /m /nologo /v:m > "%LOGS%\build.log" 2>&1
+    cmake --build "%BUILD%" --config Release --parallel --target wers_tests wers_dsp_tests wers_plugin_tests wers_ui_shots wers_cli wers_whisper WERS_VST3 WersProbe_VST3 barwa_tests barwa_plugin_tests barwa_ui_shots barwa_measure WersBarwa_VST3 refren_tests refren_render refren_plugin_tests refren_preset_tests refren_ui_shots refren_trim refren_measure WersRefren_VST3 -- /m /nologo /v:m > "%LOGS%\build.log" 2>&1
     if errorlevel 1 ( echo FAILED build>> "%STATUS%" & goto end )
     echo PASSED build !TIME!>> "%STATUS%"
     if exist "%ROOT%\WERS.vst3" rmdir /s /q "%ROOT%\WERS.vst3"
@@ -143,6 +143,8 @@ if not errorlevel 1 (
     if errorlevel 1 ( echo FAILED refren measure>> "%STATUS%" ) else ( echo PASSED refren measure !TIME!>> "%STATUS%" )
     "%BUILD%\plugins\refren\Release\refren_measure.exe" --cpu > "%LOGS%\refren_cpu.log" 2>&1
     if errorlevel 1 ( echo FAILED refren cpu>> "%STATUS%" ) else ( echo PASSED refren cpu>> "%STATUS%" )
+    "%BUILD%\plugins\refren\Release\refren_trim.exe" --load > "%LOGS%\refren_load.log" 2>&1
+    if errorlevel 1 ( echo FAILED refren load>> "%STATUS%" ) else ( echo PASSED refren load>> "%STATUS%" )
 )
 
 echo %JOB% | findstr /c:"model" >nul
