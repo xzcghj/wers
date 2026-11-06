@@ -40,7 +40,7 @@ if not errorlevel 1 (
     if errorlevel 1 ( echo FAILED configure>> "%STATUS%" & goto end )
     echo build !TIME!>> "%STATUS%"
     echo   Kompilacja...
-    cmake --build "%BUILD%" --config Release --parallel --target wers_tests wers_dsp_tests wers_plugin_tests wers_ui_shots wers_cli wers_whisper WERS_VST3 WersProbe_VST3 barwa_tests barwa_plugin_tests barwa_ui_shots barwa_measure WersBarwa_VST3 -- /m /nologo /v:m > "%LOGS%\build.log" 2>&1
+    cmake --build "%BUILD%" --config Release --parallel --target wers_tests wers_dsp_tests wers_plugin_tests wers_ui_shots wers_cli wers_whisper WERS_VST3 WersProbe_VST3 barwa_tests barwa_plugin_tests barwa_ui_shots barwa_measure WersBarwa_VST3 refren_tests refren_render -- /m /nologo /v:m > "%LOGS%\build.log" 2>&1
     if errorlevel 1 ( echo FAILED build>> "%STATUS%" & goto end )
     echo PASSED build !TIME!>> "%STATUS%"
     if exist "%ROOT%\WERS.vst3" rmdir /s /q "%ROOT%\WERS.vst3"
@@ -66,6 +66,8 @@ if not errorlevel 1 (
     if not exist "%LOGS%\barwa_shots" mkdir "%LOGS%\barwa_shots"
     "%BUILD%\plugins\barwa\Release\barwa_ui_shots.exe" "%LOGS%\barwa_shots" > "%LOGS%\barwa_shots.log" 2>&1
     if errorlevel 1 ( echo FAILED barwa ui shots>> "%STATUS%" ) else ( echo PASSED barwa ui shots>> "%STATUS%" )
+    "%BUILD%\plugins\refren\Release\refren_tests.exe" > "%LOGS%\refren_tests.log" 2>&1
+    if errorlevel 1 ( echo FAILED refren tests>> "%STATUS%" ) else ( echo PASSED refren tests>> "%STATUS%" )
     if exist "%ROOT%\testdata\vocal_dry.wav" (
         if not exist "%LOGS%\shots" mkdir "%LOGS%\shots"
         "%BUILD%\plugins\wers\plugin\Release\wers_ui_shots.exe" "%LOGS%\shots" "%ROOT%\testdata\vocal_dry.wav" "%ROOT%\testdata\beat.wav" > "%LOGS%\shots.log" 2>&1
@@ -108,6 +110,16 @@ if not errorlevel 1 (
     echo   Pomiar obciazenia procesora...
     "%BUILD%\plugins\barwa\Release\barwa_measure.exe" --cpu > "%LOGS%\cpu.log" 2>&1
     if errorlevel 1 ( echo FAILED cpu>> "%STATUS%" ) else ( echo PASSED cpu>> "%STATUS%" )
+)
+
+echo %JOB% | findstr /c:"refrenrender" >nul
+if not errorlevel 1 (
+    rem Listening samples from the vocals named in refren_list.txt. They stay in the logs folder on this computer.
+    echo refren render !TIME!>> "%STATUS%"
+    echo   Probki Refrenu do odsluchu...
+    if exist "%LOGS%\refren_probe" rmdir /s /q "%LOGS%\refren_probe"
+    "%BUILD%\plugins\refren\Release\refren_render.exe" --list "%ROOT%\refren_list.txt" --out "%LOGS%\refren_probe" > "%LOGS%\refren_render.log" 2>&1
+    if errorlevel 1 ( echo FAILED refren render>> "%STATUS%" ) else ( echo PASSED refren render !TIME!>> "%STATUS%" )
 )
 
 echo %JOB% | findstr /c:"model" >nul

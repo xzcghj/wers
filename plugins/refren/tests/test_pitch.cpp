@@ -75,10 +75,11 @@ TEST_CASE("pitch of a steady voice") {
 TEST_CASE("pitch through a glide") {
     const double length = 2.0;
     for (double fs : { 44100.0, 48000.0 }) {
-        for (auto [from, to] : std::array<std::pair<double, double>, 2>{ { { 110.0, 220.0 }, { 300.0, 150.0 } } }) {
+        for (const auto& glide : std::array<std::pair<double, double>, 2>{ { { 110.0, 220.0 }, { 300.0, 150.0 } } }) {
+            const double from = glide.first, to = glide.second;
             CAPTURE(fs); CAPTURE(from);
             const auto x = glideVoice(from, to, -18.0, static_cast<int>(fs * length), fs);
-            const auto share = readAll(x, fs, 0.1, 10.0, [from = from, to = to, length](double t) { return glideHz(from, to, t, length); });
+            const auto share = readAll(x, fs, 0.1, 10.0, [from, to, length](double t) { return glideHz(from, to, t, length); });
             MESSAGE("glide from " << from << ": " << share.closeShare() * 100.0 << "% within 10 cents");
             CHECK(share.voicedShare() >= 0.95);
             CHECK(share.closeShare() >= 0.9);

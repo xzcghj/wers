@@ -97,10 +97,11 @@ TEST_CASE("octave down and up land on pitch") {
                 CHECK(shareOnPitch(y, fs, 0.2, 5.0, [&](double) { return f0 * ratio; }) >= 0.9);
             }
             const double length = 2.0;
-            for (auto [from, to] : std::array<std::pair<double, double>, 2>{ { { 110.0, 220.0 }, { 300.0, 150.0 } } }) {
+            for (const auto& glide : std::array<std::pair<double, double>, 2>{ { { 110.0, 220.0 }, { 300.0, 150.0 } } }) {
+                const double from = glide.first, to = glide.second;
                 CAPTURE(fs); CAPTURE(semitones); CAPTURE(from);
                 const auto y = runPsola(glideVoice(from, to, -18.0, static_cast<int>(fs * length), fs), fs, shifted(semitones));
-                const double share = shareOnPitch(y, fs, 0.2, 5.0, [&, from = from, to = to](double t) { return glideHz(from, to, t, length) * ratio; });
+                const double share = shareOnPitch(y, fs, 0.2, 5.0, [&](double t) { return glideHz(from, to, t, length) * ratio; });
                 MESSAGE("glide from " << from << " by " << semitones << " at " << fs << ": " << share * 100.0 << "%");
                 CHECK(share >= 0.9);
             }
