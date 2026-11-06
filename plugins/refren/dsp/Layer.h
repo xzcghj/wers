@@ -22,7 +22,7 @@ public:
 private:
     struct Voice {
         float offsetShare = 1.0f, panShare = 0.0f, ownGain = 1.0f, highGain = 1.0f, rateHz = 0.5f;
-        float phase = 0.0f, from = 0.0f, to = 0.0f, lowState = 0.0f;
+        float phase = 0.0f, from = 0.0f, to = 0.0f, lowState = 0.0f, arrival = 0.0f;
         uint32_t random = 1u;
         wers::Ramp delay, left, right;
     };
@@ -31,10 +31,10 @@ private:
     double fs_ = 48000.0;
     uint32_t seed_ = 1u;
     int latency_ = 1440, shortestRead_ = 2, controlStep_ = 32;
-    float perSample_ = 1.0f / 32.0f, smooth_ = 0.05f, secondsPerStep_ = 32.0f / 48000.0f, shelfCoef_ = 0.28f;
+    float perSample_ = 1.0f / 32.0f, smooth_ = 0.05f, arrivalSmooth_ = 0.1f, secondsPerStep_ = 32.0f / 48000.0f, shelfCoef_ = 0.28f;
     std::array<Voice, kMaxVoices> voice_{};
     std::vector<float> line_;
-    int lineMask_ = 0, writePos_ = 0, active_ = 0;
+    int lineMask_ = 0, writePos_ = 0, active_ = 0, written_ = 0;
     bool first_ = true, startsAtZero_ = false;
     float levelDb_ = -6.0f, width_ = 0.5f, timeMs_ = 12.0f, detune_ = 8.0f, levelGain_ = 0.0f;
 };

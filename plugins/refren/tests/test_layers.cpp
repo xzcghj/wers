@@ -249,10 +249,12 @@ TEST_CASE("time offsets keep their range") {
         const int streamDelay = 0;
         Layer layer;
         layer.prepare(kFs, 3u);
-        layer.set(l, 1.0f, 1.0f, 16, streamDelay);
         first = -1;
         last = -1;
-        for (int i = 0; i < n; ++i) {
+        // Silence first, because a voice comes in softly once it has something to read.
+        const int lead = static_cast<int>(kFs * 0.2);
+        for (int i = -lead; i < n; ++i) {
+            if ((i + lead) % layer.controlStep() == 0) layer.set(l, 1.0f, 1.0f, 16, streamDelay);
             float left = 0.0f, right = 0.0f;
             layer.tick(i == 0 ? 1.0f : 0.0f, left, right);
             if (std::abs(left) + std::abs(right) > 1.0e-4f) {
@@ -371,17 +373,21 @@ TEST_CASE("mask off equals no classifier") {
     p.layer[0].width = 0.0f;
     // With the mask off the path is linear, so its result is the input through its impulse response.
     const int n = static_cast<int>(kFs);
-    const auto x = makeSyllables(kFs, 2).signal;
+    // Silence first, because a voice comes in softly once it has something to read.
+    const size_t lead = static_cast<size_t>(kFs * 0.2);
+    auto x = makeSyllables(kFs, 2).signal;
+    x.insert(x.begin(), lead, 0.0f);
     std::vector<float> impulse(x.size(), 0.0f);
-    impulse[0] = 1.0f;
+    impulse[lead] = 1.0f;
     const auto h = runMono(impulse, p).left;
     const auto y = runMono(x, p).left;
     std::vector<double> expected(x.size(), 0.0);
     int nonZero = 0;
-    for (size_t k = 0; k < h.size() && k < static_cast<size_t>(n); ++k) {
-        if (std::abs(h[k]) < 1.0e-7f) continue;
+    for (size_t k = 0; k + lead < h.size() && k < static_cast<size_t>(n); ++k) {
+        const float heard = h[k + lead];
+        if (std::abs(heard) < 1.0e-7f) continue;
         ++nonZero;
-        for (size_t i = 0; i + k < x.size(); ++i) expected[i + k] += static_cast<double>(h[k]) * x[i];
+        for (size_t i = 0; i + k < x.size(); ++i) expected[i + k] += static_cast<double>(heard) * x[i];
     }
     REQUIRE(nonZero > 0);
     double error = 0.0, signal = 0.0;
@@ -491,6 +497,66 @@ TEST_CASE("gate keeps its timing") {
     MESSAGE("quiet after " << fall << " ms for " << (quietTo - quietFrom) / kFs * 1000.0 << " ms");
     CHECK(fall <= 27.0);
     CHECK(fall >= 10.0);
+}
+
+TEST_CASE("a filter moves without a click") {
+    const int n = static_cast<int>(kFs), change = 24000;
+    const auto x = sine(150.0, -12.0, n, kFs);
+    const auto run = [&](const RefrenParams& before, const RefrenParams& after) {
+        RefrenEngine engine;
+        engine.prepare(kFs);
+        engine.setParams(before);
+        auto y = x;
+        for (int from = 0; from < n; from += 32) {
+            if (from == change) engine.setParams(after);
+            float* channels[] = { y.data() + from };
+            engine.process(channels, 1, std::min(32, n - from));
+        }
+        return worstJump(y, change, n);
+    };
+    RefrenParams open;
+    open.delta = true;
+    auto cut = open;
+    cut.layer[0].lowHz = 1000.0f;
+    cut.layer[0].highHz = 1000.0f;
+    const double steady = std::max(run(open, open), run(cut, cut));
+    CHECK(run(open, cut) <= 2.0 * steady);
+    CHECK(run(cut, open) <= 2.0 * steady);
+}
+
+TEST_CASE("a voice coming through an emptied line does not click") {
+    const int n = static_cast<int>(kFs);
+    const auto x = sine(150.0, -12.0, n, kFs);
+    const auto run = [&](const RefrenParams& before, const RefrenParams& after, int change) {
+        RefrenEngine engine;
+        engine.prepare(kFs);
+        engine.setParams(before);
+        auto left = x, right = x;
+        for (int from = 0; from < n; from += 32) {
+            if (from == change) engine.setParams(after);
+            float* channels[] = { left.data() + from, right.data() + from };
+            engine.process(channels, 2, std::min(32, n - from));
+        }
+        return std::pair<double, double>(worstJump(left, 24000, n), worstJump(right, 24000, n));
+    };
+    RefrenParams one;
+    one.delta = true;
+    one.layer[0].voices = 1;
+    one.layer[0].timeMs = 6.0f;
+    one.layer[0].width = 0.0f;
+    RefrenParams two = one;
+    two.layer[0].voices = 2;
+    two.layer[0].timeMs = 40.0f;
+    two.layer[0].width = 0.5f;
+    const auto steadyOne = run(one, one, -1), steadyTwo = run(two, two, -1);
+    const double limit = 2.0 * std::max({ steadyOne.first, steadyOne.second, steadyTwo.first, steadyTwo.second });
+    // The sine is somewhere else each time the voices come back.
+    for (int change = 24000; change < 24000 + 320; change += 32) {
+        CAPTURE(change);
+        const auto steps = run(one, two, change);
+        CHECK(steps.first <= limit);
+        CHECK(steps.second <= limit);
+    }
 }
 
 TEST_CASE("changes that cannot be smoothed do not click") {

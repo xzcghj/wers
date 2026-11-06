@@ -4,7 +4,7 @@ namespace refren {
 
 namespace {
 
-constexpr double kLatencySeconds = 0.030, kLineSeconds = 0.12, kSmoothSeconds = 0.02;
+constexpr double kLatencySeconds = 0.030, kLineSeconds = 0.12, kSmoothSeconds = 0.02, kArrivalSeconds = 0.005;
 constexpr int kOversamplingLatency = 49, kShortestRead = 2;
 constexpr float kOwnLevelDb = 1.5f, kOwnColourDb = 2.0f, kShelfHz = 2500.0f, kLongestTimeMs = 40.0f;
 constexpr float kEarliestShare = -0.2f; // of the time range, for voices that may stand before the dry voice
@@ -31,6 +31,7 @@ void Layer::prepare(double fs, uint32_t seed) {
     perSample_ = 1.0f / static_cast<float>(controlStep_);
     secondsPerStep_ = static_cast<float>(controlStep_ / fs);
     smooth_ = static_cast<float>(wers::onePoleCoeff(kSmoothSeconds, fs / controlStep_));
+    arrivalSmooth_ = static_cast<float>(wers::onePoleCoeff(kArrivalSeconds, fs / controlStep_));
     shelfCoef_ = static_cast<float>(wers::onePoleCoeff(1.0 / (2.0 * wers::kPi * kShelfHz), fs));
     int size = 1;
     while (size < static_cast<int>(kLineSeconds * fs) + 8) size *= 2;
@@ -42,6 +43,7 @@ void Layer::prepare(double fs, uint32_t seed) {
 void Layer::reset() noexcept {
     std::fill(line_.begin(), line_.end(), 0.0f);
     writePos_ = 0;
+    written_ = 0;
     active_ = 0;
     first_ = true;
     uint32_t state = seed_ * 2654435761u + 12345u;
@@ -54,6 +56,7 @@ void Layer::reset() noexcept {
         v.from = nextRandom(v.random);
         v.to = nextRandom(v.random);
         v.lowState = 0.0f;
+        v.arrival = 0.0f;
         v.delay.set(0.0f);
         v.left.set(0.0f);
         v.right.set(0.0f);
@@ -126,7 +129,10 @@ void Layer::set(const LayerParams& params, float widthScale, float timeScale, in
         const float delay = std::max(place, shortest + swing) + swing * noise;
 
         const float angle = (0.5f + 0.5f * v.panShare * width_) * halfPi;
-        const float gain = levelGain_ * v.ownGain;
+        // An emptied line has nothing to read for a while. The voice waits for the first sound to reach it and then
+        // comes in softly, because sound that just starts in the middle of a wave is a click.
+        if (static_cast<float>(written_) > delay + 3.0f) v.arrival = approach(v.arrival, 1.0f, arrivalSmooth_, 1.0e-4f);
+        const float gain = levelGain_ * v.ownGain * v.arrival;
         const float toLeft = gain * std::cos(angle) * 1.41421356f, toRight = gain * std::sin(angle) * 1.41421356f;
         if (first_) {
             v.delay.set(delay);
@@ -160,6 +166,7 @@ void Layer::tick(float stream, float& left, float& right) noexcept {
         v.right.now += v.right.step;
     }
     writePos_ = (writePos_ + 1) & lineMask_;
+    if (written_ <= lineMask_) ++written_;
 }
 
 } // namespace refren
