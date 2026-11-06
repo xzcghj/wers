@@ -11,8 +11,11 @@ constexpr double kAntiAliasShare = 0.42; // of the new Nyquist frequency
 constexpr double kQ1 = 0.54119610014619698, kQ2 = 1.3065629648763766; // fourth-order Butterworth
 constexpr float kDipThreshold = 0.15f, kVoicedConfidence = 0.5f, kInputLimit = 64.0f;
 constexpr float kCreakMargin = 0.25f;
+constexpr double kRefineSeconds = 0.0133;
+constexpr int kRefineLongest = 1024; // keeps the work at the highest sample rates within reason
 constexpr double kQuietPower = 1.0e-7; // -70 dBFS
-constexpr double kSearchNear = 0.7, kSearchFar = 1.3, kDistancePenalty = 0.25;
+constexpr double kSearchFar = 1.3, kDistancePenalty = 0.25;
+constexpr float kEarlierPeriodLevel = 0.25f; // walking back into a voice stops where it is this much quieter
 
 float squaredDifference(const float* a, const float* b, int n) noexcept {
     float sum = 0.0f;
@@ -80,11 +83,15 @@ void VoiceAnalysis::prepare(double fs) {
     decimated_.assign(static_cast<size_t>(decimatedSize_) * 2, 0.0f);
     difference_.assign(static_cast<size_t>(tauMax_) + 2, 0.0f);
     // The centre of the window, and two more readings for the two neighbours a settled reading waits for.
-    readingLag_ = (window_ + tauMax_) * decimation_ / 2 + 2 * hopSamples_;
+    readingLagOfWindow_ = (window_ + tauMax_) * decimation_ / 2;
+    readingLag_ = readingLagOfWindow_ + 2 * hopSamples_;
+    refineWindow_ = std::min(static_cast<int>(std::lround(fs * kRefineSeconds)), kRefineLongest);
+    refine_.assign(static_cast<size_t>(refineWindow_) + static_cast<size_t>(tauMax_ + 2) * static_cast<size_t>(decimation_) + 8, 0.0f);
 
     const int ringSize = nextPowerOfTwo(static_cast<int>(std::ceil(fs * kHistorySeconds)) + 8);
     ring_.assign(static_cast<size_t>(ringSize), 0.0f);
     lowRing_.assign(static_cast<size_t>(ringSize), 0.0f);
+    smoothRing_.assign(static_cast<size_t>(ringSize), 0.0f);
     ringMask_ = ringSize - 1;
     readings_.assign(static_cast<size_t>(std::ceil(kReadingSeconds * fs / hopSamples_)) + 1, PitchReading{});
 
@@ -103,6 +110,7 @@ void VoiceAnalysis::reset() noexcept {
     now_ = nextMarkAt_ = lastMark_ = newestReadingTime_ = levelCount_ = 0;
     std::fill(ring_.begin(), ring_.end(), 0.0f);
     std::fill(lowRing_.begin(), lowRing_.end(), 0.0f);
+    std::fill(smoothRing_.begin(), smoothRing_.end(), 0.0f);
     std::fill(decimated_.begin(), decimated_.end(), 0.0f);
     std::fill(readings_.begin(), readings_.end(), PitchReading{});
     raw_.fill(PitchReading{});
@@ -122,6 +130,7 @@ void VoiceAnalysis::push(float mono) noexcept {
     power_ += (static_cast<double>(x) * x - power_) * powerCoef_;
     ++now_;
     const double smooth = antiAlias_[1].tick(antiAlias_[0].tick(static_cast<double>(x)));
+    smoothRing_[place] = static_cast<float>(smooth);
     if (++decimateCount_ >= decimation_) {
         decimateCount_ = 0;
         const auto low = static_cast<float>(smooth);
@@ -139,19 +148,20 @@ void VoiceAnalysis::push(float mono) noexcept {
 }
 
 void VoiceAnalysis::analyse() noexcept {
-    // decimatedPos_ is the oldest sample, so from there on the history is in order.
+    // decimatedPos_ is the oldest sample, so from there on the history is in order. The two arms of the comparison
+    // move apart around one moment, so a reading always belongs to that moment, whatever period it finds.
     const float* oldest = decimated_.data() + decimatedPos_ + 2;
-    const int newestFirstSample = window_ + tauMax_ - 1;
-    const float* last = oldest + newestFirstSample - window_ + 1; // the last window_ samples
+    const float* middle = oldest + tauMax_ / 2;
 
     PitchReading reading;
     double energy = 0.0;
-    for (int i = 0; i < window_; ++i) energy += static_cast<double>(last[i]) * last[i];
+    for (int i = 0; i < window_; ++i) energy += static_cast<double>(middle[i]) * middle[i];
     if (energy / window_ >= kQuietPower) {
         // Cumulative mean normalised difference: what stays low is what repeats.
         float running = 0.0f;
         for (int tau = 1; tau <= tauMax_; ++tau) {
-            const float d = squaredDifference(last, last - tau, window_);
+            const int back = tau / 2;
+            const float d = squaredDifference(middle - back, middle - back + tau, window_);
             running += d;
             difference_[static_cast<size_t>(tau)] = running > 0.0f ? d * static_cast<float>(tau) / running : 1.0f;
         }
@@ -180,9 +190,9 @@ void VoiceAnalysis::analyse() noexcept {
         const float before = difference_[static_cast<size_t>(best - 1)], at = difference_[static_cast<size_t>(best)], after = difference_[static_cast<size_t>(best + 1)];
         const float curve = before - 2.0f * at + after;
         const float shift = curve > 1.0e-9f ? std::clamp(0.5f * (before - after) / curve, -1.0f, 1.0f) : 0.0f;
-        reading.period = (static_cast<float>(best) + shift) * static_cast<float>(decimation_);
         reading.confidence = std::clamp(1.0f - at, 0.0f, 1.0f);
         reading.voiced = reading.confidence >= kVoicedConfidence;
+        reading.period = reading.voiced ? refinedPeriod((static_cast<float>(best) + shift) * static_cast<float>(decimation_)) : (static_cast<float>(best) + shift) * static_cast<float>(decimation_);
     }
     std::rotate(raw_.begin(), raw_.begin() + 1, raw_.end());
     raw_.back() = reading;
@@ -190,6 +200,40 @@ void VoiceAnalysis::analyse() noexcept {
     readingPos_ = (readingPos_ + 1) % static_cast<int>(readings_.size());
     readingCount_ = std::min(readingCount_ + 1, static_cast<int>(readings_.size()));
     newestReadingTime_ = now_ - readingLag_;
+}
+
+float VoiceAnalysis::refinedPeriod(float period) noexcept {
+    // The same comparison at the host rate, close around the period found, for what a low rate cannot tell apart.
+    const int centreLag = static_cast<int>(std::lround(period));
+    const int reach = decimation_ + 1;
+    const int length = refineWindow_;
+    const int longestLag = centreLag + reach + 1;
+    const int span = length + longestLag;
+    if (span > static_cast<int>(refine_.size())) return period;
+    // Around the moment the reading belongs to.
+    const int64_t start = now_ - readingLagOfWindow_ - span / 2;
+    for (int i = 0; i < span; ++i) refine_[static_cast<size_t>(i)] = smoothRing_[static_cast<size_t>((start + i) & ringMask_)];
+    const float* centre = refine_.data() + longestLag / 2;
+    std::array<float, 3> around{};
+    int bestLag = 0;
+    float bestValue = 1.0e30f, before = 0.0f;
+    for (int lag = centreLag - reach; lag <= centreLag + reach; ++lag) {
+        const int back = lag / 2;
+        const float value = squaredDifference(centre - back, centre - back + lag, length);
+        if (value < bestValue) {
+            bestValue = value;
+            bestLag = lag;
+            around[0] = before;
+            around[1] = value;
+            around[2] = value; // until the next lag is known
+        } else if (lag == bestLag + 1) {
+            around[2] = value;
+        }
+        before = value;
+    }
+    if (bestLag <= centreLag - reach || bestLag >= centreLag + reach) return period;
+    const float curve = around[0] - 2.0f * around[1] + around[2];
+    return static_cast<float>(bestLag) + (curve > 1.0e-12f ? 0.5f * (around[0] - around[2]) / curve : 0.0f);
 }
 
 PitchReading VoiceAnalysis::pitchAt(int64_t time) const noexcept {
@@ -201,10 +245,37 @@ PitchReading VoiceAnalysis::pitchAt(int64_t time) const noexcept {
 }
 
 void VoiceAnalysis::addMark(int64_t position, float period) noexcept {
-    marks_[static_cast<size_t>(markPos_)] = { position, period };
+    // The peak lies between samples. Without this a period that is no whole number of samples would make every
+    // piece of a stream start up to half a sample off, which is a lot at a high pitch.
+    float fraction = 0.0f;
+    if (position + 1 < now_) {
+        const float before = lowAt(position - 1), at = lowAt(position), after = lowAt(position + 1);
+        const float curve = before - 2.0f * at + after;
+        if (curve < 0.0f) fraction = std::clamp(0.5f * (before - after) / curve, -0.5f, 0.5f);
+    }
+    marks_[static_cast<size_t>(markPos_)] = { position, fraction, period };
     markPos_ = (markPos_ + 1) % kMarks;
     markCount_ = std::min(markCount_ + 1, kMarks);
     lastMark_ = position;
+}
+
+int64_t VoiceAnalysis::peakNear(int64_t place, float period) const noexcept {
+    // The highest point near one period away, so another high point of the same period does not win.
+    const auto from = place - static_cast<int64_t>((kSearchFar - 1.0) * static_cast<double>(period));
+    const auto to = place + static_cast<int64_t>((kSearchFar - 1.0) * static_cast<double>(period));
+    float peak = 0.0f;
+    for (int64_t t = from; t <= to; ++t) peak = std::max(peak, std::abs(lowAt(t)));
+    const double slope = kDistancePenalty * static_cast<double>(peak) / ((kSearchFar - 1.0) * static_cast<double>(period));
+    int64_t best = from;
+    double bestScore = -1.0e30;
+    for (int64_t t = from; t <= to; ++t) {
+        const double score = static_cast<double>(lowAt(t)) - slope * std::abs(static_cast<double>(t - place));
+        if (score > bestScore) {
+            bestScore = score;
+            best = t;
+        }
+    }
+    return best;
 }
 
 void VoiceAnalysis::placeMarks() noexcept {
@@ -216,38 +287,37 @@ void VoiceAnalysis::placeMarks() noexcept {
     }
     const float period = newest.period;
     if (!chain_) {
-        // Into a voice: the highest point of the last period.
+        // Into a voice: the highest point of the last period. A reading comes after the sound it is about, so the
+        // periods that were already there are found by walking back from that point.
         const auto length = static_cast<int64_t>(period);
         int64_t best = now_ - 1;
         for (int64_t t = now_ - length; t < now_; ++t)
             if (lowAt(t) > lowAt(best)) best = t;
-        addMark(best, period);
+        const float level = lowAt(best);
+        const int64_t earliest = std::max(now_ - readingLag_ - length, lastMark_ + length / 2 + 1);
+        std::array<int64_t, kMarks> found{};
+        int count = 0;
+        found[static_cast<size_t>(count++)] = best;
+        while (count < kMarks) {
+            const int64_t place = found[static_cast<size_t>(count - 1)] - length;
+            if (place - length / 2 < earliest) break;
+            const int64_t candidate = peakNear(place, period);
+            if (lowAt(candidate) < kEarlierPeriodLevel * level) break;
+            found[static_cast<size_t>(count++)] = candidate;
+        }
+        for (int k = count - 1; k >= 0; --k) addMark(found[static_cast<size_t>(k)], period);
         chain_ = true;
-        nextMarkAt_ = best + static_cast<int64_t>(kSearchFar * period) + 1;
+        nextMarkAt_ = best + static_cast<int64_t>(kSearchFar * static_cast<double>(period)) + 1;
         return;
     }
-    const int64_t from = lastMark_ + static_cast<int64_t>(kSearchNear * period);
-    const int64_t to = lastMark_ + static_cast<int64_t>(kSearchFar * period);
+    const int64_t to = lastMark_ + static_cast<int64_t>(kSearchFar * static_cast<double>(period));
     if (now_ <= to) {
         nextMarkAt_ = to + 1;
         return;
     }
-    // The highest point near one period on, so another high point of the same period does not win.
-    float peak = 0.0f;
-    for (int64_t t = from; t <= to; ++t) peak = std::max(peak, std::abs(lowAt(t)));
-    const double centre = static_cast<double>(lastMark_) + static_cast<double>(period);
-    const double slope = kDistancePenalty * static_cast<double>(peak) / ((kSearchFar - 1.0) * static_cast<double>(period));
-    int64_t best = from;
-    double bestScore = -1.0e30;
-    for (int64_t t = from; t <= to; ++t) {
-        const double score = static_cast<double>(lowAt(t)) - slope * std::abs(static_cast<double>(t) - centre);
-        if (score > bestScore) {
-            bestScore = score;
-            best = t;
-        }
-    }
+    const int64_t best = peakNear(lastMark_ + static_cast<int64_t>(std::lround(period)), period);
     addMark(best, period);
-    nextMarkAt_ = best + static_cast<int64_t>(kSearchFar * period) + 1;
+    nextMarkAt_ = best + static_cast<int64_t>(kSearchFar * static_cast<double>(period)) + 1;
 }
 
 bool VoiceAnalysis::markNear(int64_t time, int64_t latest, Mark& out) const noexcept {

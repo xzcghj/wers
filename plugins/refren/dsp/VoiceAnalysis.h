@@ -14,6 +14,7 @@ struct PitchReading {
 
 struct Mark {
     int64_t position = 0;
+    float fraction = 0.0f; // the rest of the place, between samples
     float period = 0.0f;
 };
 
@@ -39,14 +40,17 @@ public:
 private:
     static constexpr int kMarks = 64;
     void analyse() noexcept;
+    float refinedPeriod(float period) noexcept;
     void placeMarks() noexcept;
+    int64_t peakNear(int64_t place, float period) const noexcept;
     void addMark(int64_t position, float period) noexcept;
     float lowAt(int64_t time) const noexcept { return lowRing_[static_cast<size_t>(time & ringMask_)]; }
 
     double fs_ = 48000.0;
     int decimation_ = 4, hopDecimated_ = 30, hopSamples_ = 120, tauMin_ = 12, tauMax_ = 160, window_ = 160, readingLag_ = 640, levelShift_ = 240;
     int64_t ringMask_ = 0, now_ = 0, nextMarkAt_ = 0, lastMark_ = 0, newestReadingTime_ = 0;
-    std::vector<float> ring_, lowRing_;
+    std::vector<float> ring_, lowRing_, smoothRing_, refine_;
+    int refineWindow_ = 640, readingLagOfWindow_ = 640;
     std::vector<float> decimated_, difference_; // decimated_ is written twice, so a window is always contiguous
     int decimatedSize_ = 0, decimatedPos_ = 0, decimateCount_ = 0, hopCount_ = 0;
     std::array<wers::Biquad, 2> antiAlias_{};

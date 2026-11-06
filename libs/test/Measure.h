@@ -91,7 +91,8 @@ inline double framePitchHz(const std::vector<float>& x, int from, int length, do
 // How late the envelope of y is against the reference, in milliseconds, within the given range.
 inline double envelopeLagMs(const std::vector<float>& reference, const std::vector<float>& y, double fs, double rangeMs = 50.0) {
     const int step = std::max(1, static_cast<int>(std::lround(fs * 0.00025)));
-    const int window = std::max(1, static_cast<int>(std::lround(fs * 0.005 / step)));
+    // Long enough to hold whole periods of a voice an octave down, or their ripple would pull the result.
+    const int window = std::max(1, static_cast<int>(std::lround(fs * 0.03 / step)));
     const auto envelope = [&](const std::vector<float>& x) {
         const size_t count = x.size() / static_cast<size_t>(step);
         std::vector<double> power(count, 0.0), smooth(count, 0.0);
