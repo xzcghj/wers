@@ -1,6 +1,6 @@
 # WERS
 
-Seria darmowych wtyczek VST3 na Windows. W repozytorium są dwie: **WERS** do miksu wokalu i **WERS Barwa**, saturator pomyślany przede wszystkim pod wokal.
+Seria darmowych wtyczek VST3 na Windows. W repozytorium są trzy: **WERS** do miksu wokalu, **WERS Barwa**, saturator pomyślany przede wszystkim pod wokal, i **WERS Refren**, który z jednego głosu robi dubel, chór, ekipę, harmonie i efekty z gotowych presetów.
 
 ## WERS
 
@@ -75,18 +75,64 @@ To modele zachowania, a nie kopie konkretnych urządzeń.
 
 Opóźnienie to około 5 ms i wtyczka zgłasza je do DAW-a. Bypass trzyma to samo opóźnienie.
 
+## WERS Refren
+
+Robi z jednego głosu wiele: dubel, refren, ekipę, chór, głos głęboki albo wysoki, harmonie, szept i efekty. Działa w czasie rzeczywistym i ma 124 gotowe presety w 12 grupach. Syczące zostają w środku, więc nawet szeroki chór nie zamazuje słów.
+
+### Jak tego używać
+
+1. Wstaw wtyczkę bezpośrednio na ślad wokalu.
+2. Wybierz grupę po lewej i kliknij kartę presetu. Opis pojawi się po najechaniu na kartę.
+3. Dużym suwakiem **Ile** ustaw, ile efektu słychać. Przy zerze zostaje sam głos.
+4. Jeśli chcesz coś zmienić, zacznij od rzędu suwaków na dole. **Szerokość** i **Czas** działają na wszystkie warstwy naraz.
+
+Preset nie dotyka **Ile**, **Output**, **Delta** ani **Bypass**, więc przełączanie presetów nie zmienia tego, co już ustawiłeś. Każdy preset jest tak dobrany, żeby przy Ile 100% grał równie głośno jak głos na wejściu.
+
+### Grupy presetów
+
+| Grupa | Co robi |
+| --- | --- |
+| Dubel | Od ciasnego do szerokiego, mało głosów, bez pogłosu |
+| Refren | Szerokie głosy na hook, często z lekkim pogłosem |
+| Ekipa | Różne barwy i duże przesunięcia, jak kilka osób |
+| Chór | Wiele głosów, duży pogłos, ciszej suchy głos |
+| Głęboki | Oktawa w dół, ciemna barwa, sub |
+| Wysoki | Oktawa w górę, jasna barwa, głos jak z hyperpopu |
+| Harmonie | Kwinty, kwarty i oktawy |
+| Ad-liby | Efekty na pojedyncze słowa: telefon, echo, zza ściany |
+| Szept | Ten sam tekst szeptem |
+| Przester | Ziarno na warstwach, od ciepłej lampy po megafon |
+| Efekty | Robot, shimmer, flanger, autopan, kosmos |
+| Instrumenty | Te same narzędzia bez maski, do gitary, pada czy bębnów |
+
+Grupy **Ulubione** i **Moje** są twoje. Gwiazdka na karcie dodaje preset do Ulubionych. **Zapisz** tworzy własny preset, który trafia do `%APPDATA%\WERS\presets\refren` jako zwykły plik XML. Gwiazdki leżą obok, w `ulubione.txt`.
+
+### Reszta ekranu
+
+- **Scena:** każdy głos to kropka. W poziomie widać, gdzie stoi, w pionie jego interwał, a jasność mówi, jak głośno gra. Na syczących kropki przygasają, bo maska chowa warstwy. Duża kropka w środku to suchy głos, a bursztynowa oznacza szczyt ponad 0 dBFS.
+- **Szczegóły:** zamiast kart pokazują cztery warstwy i całą resztę. Suwak, który przy wybranym źródle nic nie robi, jest przygaszony.
+- **Losuj:** rusza szerokość, czas, rozstrojenie, ton, pogłos i echo obecnego brzmienia. Interwały i barwy zostają, więc nic nie wypada ze stroju. Gwiazdka przy nazwie oznacza, że brzmienie odeszło od presetu.
+- **Delta:** słychać tylko to, co dodaje wtyczka.
+- **Spółgłoski:** ile warstw schodzi z drogi na syczących. W grupie Instrumenty jest na zerze, bo tam nie ma czego chronić.
+
+### Co warto wiedzieć
+
+- Opóźnienie to 30 ms. Host wyrównuje je sam.
+- Echo idzie za tempem projektu. Bez tempa przyjmuje 120 BPM.
+- Warstwy Głos i Robot potrzebują wysokości głosu, więc na szepcie, oddechu i syczących milkną. Do tego są warstwy Szept i maska.
+
 ## Budowanie ze źródeł
 
 Potrzebne: Visual Studio 2022 z C++, CMake 3.22 lub nowszy, Git.
 
 ```
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Release --target WERS_VST3 WersBarwa_VST3
+cmake --build build --config Release --target WERS_VST3 WersBarwa_VST3 WersRefren_VST3
 ```
 
-Gotowe wtyczki powstają w `build\plugins\wers\plugin\WERS_artefacts\Release\VST3\WERS.vst3` i `build\plugins\barwa\WersBarwa_artefacts\Release\VST3\WERS Barwa.vst3`. Skrypt `scripts\build_windows.bat` robi to samo i uruchamia też testy oraz pluginval.
+Gotowe wtyczki powstają w `build\plugins\wers\plugin\WERS_artefacts\Release\VST3\WERS.vst3`, `build\plugins\barwa\WersBarwa_artefacts\Release\VST3\WERS Barwa.vst3` i `build\plugins\refren\WersRefren_artefacts\Release\VST3\WERS Refren.vst3`. Skrypt `scripts\build_windows.bat` robi to samo i uruchamia też testy oraz pluginval.
 
-Układ repozytorium: `libs/dsp`, `libs/ui` i `libs/test` to wspólna baza serii, a `plugins/wers` i `plugins/barwa` to same wtyczki. Każda kolejna wtyczka powstaje funkcją `wers_add_plugin` z `cmake/WersPlugin.cmake`.
+Układ repozytorium: `libs/dsp`, `libs/ui` i `libs/test` to wspólna baza serii, a `plugins/wers`, `plugins/barwa` i `plugins/refren` to same wtyczki. Każda kolejna wtyczka powstaje funkcją `wers_add_plugin` z `cmake/WersPlugin.cmake`.
 
 ## Licencje
 

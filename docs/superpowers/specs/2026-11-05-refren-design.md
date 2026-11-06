@@ -316,3 +316,20 @@ Nagrania zostają na jego komputerze, a do sesji wracają tylko liczby.
 4. Grupy Ad-liby, Przester, Efekty i Instrumenty.
 
 W każdej rundzie użytkownik pisze, które presety wyrzucić albo zmienić. Brzmienie ocenia użytkownik, a ja tylko mierzę.
+
+## Różnice po wdrożeniu
+
+To, co w trakcie pracy zmieniło się względem tekstu powyżej, i dlaczego.
+
+| Co | Było w specyfikacji | Jest | Dlaczego |
+| --- | --- | --- | --- |
+| Odcisk presetu | Osiem cech z dźwięku | Te same osiem i dodatkowo interwały oraz nuty robota odczytane z ustawień | Harmonia dodaje za mało do frazy testowej. Oktawa w dół podnosi pasmo połowy o mniej niż 1,5 dB, a oktawa w górę nie dodaje nowej częstotliwości, więc różne harmonie mierzyły się jednakowo |
+| Ogon w odcisku | Do spadku o 30 dB | Do chwili, gdy dźwięk zostaje pod progiem na stałe | Echo wraca po przerwie, a pierwsze przejście przez próg go nie widziało |
+| Ziarno | Własny LevelMatch | LevelMatch i stały zwrot każdego dB ponad 22 dB Drive | LevelMatch kończy się na ±12 dB, a Drive 36 dB potrzebuje do 20 dB. Stały zwrot chroni też przed skokiem przy szybkim ruchu Drive |
+| Głos w warstwie | Startuje z warstwą | Czeka, aż dotrze do niego pierwszy dźwięk, i wchodzi w 5 ms | Po zmianie, która opróżnia linię, głos z długim opóźnieniem startował w środku fali i trzaskał |
+| Bramka | Zamyka się przy zmianach, których nie da się wygładzić | Dodatkowo stare brzmienie trzyma swoje ustawienia, dopóki bramka się nie zamknie | Nowy Drive albo Wyrównanie docierały do dźwięku na jego wyjściu i robiły krótki skok |
+| Shimmer | Oktawa w sprzężeniu z ograniczeniem pętli | Wymiana części dwóch wzorów, z których czytane jest wyjście | Zdejmowanie udziału ze wszystkich linii skracało pogłos, a ta forma nie może dodać energii |
+| Pogłos | 8 linii | 8 linii i po 4 krótkie filtry wszechprzepustowe na kanał przed nimi | Głos potrzebuje miękkiego wejścia, a gęstość musi być od początku |
+| Tempo | Bez playheada 120 BPM | Tak samo, a gdy host przestaje podawać tempo, zostaje ostatnie | Echo nie powinno się przesuwać przez jeden blok bez tempa |
+| Szczegóły | Wszystkie kontrolki | Te same, a to, co przy danym źródle nic nie robi, jest przygaszone | Cztery kolumny po dwanaście kontrolek trudno się czyta |
+| Przepisy presetów | Tabele w planie | Wiele zmienionych po pomiarze | Przy warstwie −10 dB pod suchym głosem odcisk nie odróżniał presetów, a szczyty kilku przekraczały limit. Dokładna lista jest w pliku `plugins/refren/plugin/FactoryPresets.cpp` |
