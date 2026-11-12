@@ -1,2 +1,47 @@
+# Build output
 build*/
+/out/
+cmake-build-*/
+.vs/
 *.user
+
+# Built plugins and release packages
+*.vst3
+*.zip
+
+# Local files of the Windows build script (scripts/build_windows.bat)
+/logs/
+/models/
+/testdata/
+/tools/
+/src-tree/
+*.tar
+*.bundle
+job.txt
+run.job
+current.job
+stop.flag
+measure_list.txt
+refren_list.txt
+
+# Audio, DAW projects and speech models stay on your own computer
+*.wav
+*.flac
+*.mp3
+*.RPP
+*.rpp
+*.rpp-bak
+*.reapeaks
+ggml-*.bin
+
+# Secrets, just in case
+.env
+.env.*
+*.pem
+*.key
+
+# Editors and OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

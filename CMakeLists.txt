@@ -26,6 +26,10 @@ if(WERS_SANITIZE AND NOT MSVC)
 endif()
 
 if(MSVC)
+    # Asserts in dependencies keep __FILE__, so without this the binaries would carry the full path of the build folder.
+    file(TO_NATIVE_PATH "${CMAKE_SOURCE_DIR}" WERS_SRC_NATIVE)
+    file(TO_NATIVE_PATH "${CMAKE_BINARY_DIR}" WERS_BIN_NATIVE)
+    add_compile_options("/d1trimfile:${WERS_SRC_NATIVE}" "/d1trimfile:${WERS_BIN_NATIVE}")
     set(WERS_WARNINGS /W4 /permissive- /utf-8)
 else()
     set(WERS_WARNINGS -Wall -Wextra -Wno-unused-parameter)

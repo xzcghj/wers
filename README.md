@@ -1,6 +1,25 @@
 # WERS
 
-Seria darmowych wtyczek VST3 na Windows. W repozytorium są trzy: **WERS** do miksu wokalu, **WERS Barwa**, saturator pomyślany przede wszystkim pod wokal, i **WERS Refren**, który z jednego głosu robi dubel, chór, ekipę, harmonie i efekty z gotowych presetów.
+Seria darmowych wtyczek VST3 na Windows do pracy z wokalem. *Free VST3 vocal plugins for Windows (UI in Polish).*
+
+| Wtyczka | Co robi |
+| --- | --- |
+| **WERS** | Sprawdza, czy każde słowo w numerze jest słyszalne na telefonie, w słuchawkach, w aucie, i naprawia te, które giną pod bitem |
+| **WERS Barwa** | Saturator pod wokal: dodaje barwę samogłoskom, a głoski syczące zostawia czyste |
+| **WERS Refren** | Z jednego głosu robi dubel, chór, ekipę, harmonie i efekty. 124 gotowe presety |
+
+![WERS](docs/img/wers.png)
+
+<p>
+  <img src="docs/img/barwa.png" width="49%" alt="WERS Barwa">
+  <img src="docs/img/refren.png" width="49%" alt="WERS Refren">
+</p>
+
+## Pobieranie
+
+Gotowe wtyczki są w zakładce [Releases](../../releases). Pobierz `WERS-Windows.zip`, rozpakuj i kliknij dwa razy `zainstaluj_wers.bat`. Potem w DAW uruchom ponowne skanowanie wtyczek.
+
+Wymagania: Windows 10 lub 11 (64-bit) i DAW obsługujący VST3. Rozpoznawanie tekstu w WERS potrzebuje procesora z AVX2 (praktycznie każdy z ostatnich 10 lat). Najlepiej działa w REAPERze, ale wszystkie trzy działają w każdym DAW-ie z VST3.
 
 ## WERS
 
@@ -10,7 +29,7 @@ Jeden plik `WERS.vst3`, trzy role wybierane w oknie wtyczki: Wokal, Bit i Master
 
 ### Instalacja na Windows
 
-1. Kliknij dwa razy `zainstaluj_wers.bat`. Instaluje obie wtyczki. Windows zapyta o zgodę, bo folder `C:\Program Files\Common Files\VST3` wymaga uprawnień administratora.
+1. Kliknij dwa razy `zainstaluj_wers.bat`. Instaluje wszystkie trzy wtyczki. Windows zapyta o zgodę, bo folder `C:\Program Files\Common Files\VST3` wymaga uprawnień administratora.
 2. W DAW uruchom ponowne skanowanie wtyczek.
 
 Możesz też skopiować cały folder `WERS.vst3` tam, gdzie Twój DAW szuka wtyczek. Folder musi zostać w całości, bo w środku jest też program `wers_whisper.exe`, który rozpoznaje tekst.
@@ -135,6 +154,8 @@ Gotowe wtyczki powstają w `build\plugins\wers\plugin\WERS_artefacts\Release\VST
 
 Układ repozytorium: `libs/dsp`, `libs/ui` i `libs/test` to wspólna baza serii, a `plugins/wers`, `plugins/barwa` i `plugins/refren` to same wtyczki. Każda kolejna wtyczka powstaje funkcją `wers_add_plugin` z `cmake/WersPlugin.cmake`.
 
-## Licencje
+## Licencja
 
-Kod używa JUCE 8 (AGPLv3 albo licencja komercyjna, więc przed ewentualną sprzedażą wtyczki trzeba sprawdzić warunki JUCE), whisper.cpp (MIT), doctest (MIT). Model mowy to Whisper large-v3-turbo od OpenAI (MIT). Czcionki Bricolage Grotesque i Instrument Sans są na licencji OFL.
+Kod jest na licencji [GNU AGPL v3](LICENSE): możesz go używać, zmieniać i rozpowszechniać, pod warunkiem że Twoja wersja też będzie otwarta na tej samej licencji. Wynika to z JUCE 8, które poza licencją komercyjną jest dostępne właśnie na AGPLv3.
+
+Użyte biblioteki: JUCE 8 (AGPLv3), whisper.cpp (MIT), doctest (MIT). Model mowy to Whisper large-v3-turbo od OpenAI (MIT), pobierany osobno przy pierwszym uruchomieniu. Czcionki Bricolage Grotesque i Instrument Sans są na licencji OFL.
