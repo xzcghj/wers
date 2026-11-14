@@ -1,0 +1,10 @@
+WERS: trzy darmowe wtyczki VST3 na Windows 10 i 11, 64 bit
+
+1. Rozpakuj cały ZIP: prawy przycisk, Wyodrębnij wszystkie. Nie uruchamiaj niczego z wnętrza ZIP-a.
+2. Zamknij DAW.
+3. W rozpakowanym folderze kliknij dwa razy zainstaluj_wers.bat i zgódź się w oknie Windows.
+   Wtyczki trafią do C:\Program Files\Common Files\VST3. Na koniec ten folder sam się otworzy.
+4. Otwórz DAW i włącz ponowne skanowanie wtyczek. Szukaj nazw WERS, WERS Barwa i WERS Refren.
+
+Bez instalatora: skopiuj trzy foldery .vst3 w całości do folderu, w którym Twój DAW szuka wtyczek.
+WERS przy pierwszym uruchomieniu zapyta o pobranie modelu mowy (około 550 MB).

@@ -29,8 +29,11 @@ Jeden plik `WERS.vst3`, trzy role wybierane w oknie wtyczki: Wokal, Bit i Master
 
 ### Instalacja na Windows
 
-1. Kliknij dwa razy `zainstaluj_wers.bat`. Instaluje wszystkie trzy wtyczki. Windows zapyta o zgodę, bo folder `C:\Program Files\Common Files\VST3` wymaga uprawnień administratora.
-2. W DAW uruchom ponowne skanowanie wtyczek.
+1. Rozpakuj cały ZIP. Instalator uruchomiony z wnętrza ZIP-a nie widzi wtyczek i mówi o tym.
+2. Kliknij dwa razy `zainstaluj_wers.bat`. Instaluje wszystkie trzy wtyczki do `C:\Program Files\Common Files\VST3`, więc Windows zapyta o zgodę administratora. Na koniec pokazuje, ile wtyczek skopiował, i otwiera ten folder.
+3. W DAW uruchom ponowne skanowanie wtyczek.
+
+Instalator szuka folderów `.vst3` obok siebie, w folderze `VST3` obok siebie i w folderze `build` tego projektu. Na komputerze, na którym budujesz, krok `package` w `job.txt` składa paczkę `dist\WERS-Windows.zip`: trzy foldery `.vst3`, `zainstaluj_wers.bat` i `CZYTAJ.txt`.
 
 Możesz też skopiować cały folder `WERS.vst3` tam, gdzie Twój DAW szuka wtyczek. Folder musi zostać w całości, bo w środku jest też program `wers_whisper.exe`, który rozpoznaje tekst.
 

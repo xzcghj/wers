@@ -204,6 +204,9 @@ if not errorlevel 1 (
     )
 )
 
+echo %JOB% | findstr /c:"package" >nul
+if not errorlevel 1 call :package
+
 echo DONE %DATE% %TIME%>> "%STATUS%"
 :end
 echo finished %TIME%>> "%STATUS%"
@@ -228,4 +231,23 @@ echo transcribe %~1 start %TIME%>> "%STATUS%"
 echo   Rozpoznawanie tekstu: %~1...
 "%BUILD%\plugins\wers\tools\Release\wers_cli.exe" "%ROOT%\testdata\vocal_dry.wav" "%ROOT%\testdata\beat.wav" --model "%MODELS%\%~1.bin" --depth 0.4 --dump "%LOGS%\%~2.tsv" --raw-dump "%LOGS%\%~2_raw.txt" > "%LOGS%\%~2.log" 2>&1
 if errorlevel 1 ( echo FAILED transcribe %~1>> "%STATUS%" ) else ( echo PASSED transcribe %~1 %TIME%>> "%STATUS%" )
+exit /b 0
+
+:package
+rem A folder and a ZIP for another computer: the three plugins, the installer and a short note, nothing else.
+set "DIST=%ROOT%\dist"
+if exist "%DIST%" rmdir /s /q "%DIST%"
+mkdir "%DIST%\WERS"
+echo   Skladanie paczki dla innego komputera...
+xcopy /e /i /q /y "%VST%" "%DIST%\WERS\WERS.vst3" > "%LOGS%\package.log" 2>&1 || goto package_failed
+xcopy /e /i /q /y "%BARWA%" "%DIST%\WERS\WERS Barwa.vst3" >> "%LOGS%\package.log" 2>&1 || goto package_failed
+xcopy /e /i /q /y "%REFREN%" "%DIST%\WERS\WERS Refren.vst3" >> "%LOGS%\package.log" 2>&1 || goto package_failed
+copy /y "%ROOT%\zainstaluj_wers.bat" "%DIST%\WERS\" >> "%LOGS%\package.log" 2>&1 || goto package_failed
+copy /y "%ROOT%\CZYTAJ.txt" "%DIST%\WERS\" >> "%LOGS%\package.log" 2>&1 || goto package_failed
+tar -a -c -f "%DIST%\WERS-Windows.zip" -C "%DIST%" WERS >> "%LOGS%\package.log" 2>&1 || goto package_failed
+echo PASSED package %DIST%\WERS-Windows.zip>> "%STATUS%"
+echo   Paczka gotowa: %DIST%\WERS-Windows.zip
+exit /b 0
+:package_failed
+echo FAILED package>> "%STATUS%"
 exit /b 0
