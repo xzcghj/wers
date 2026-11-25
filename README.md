@@ -1,12 +1,16 @@
 # WERS
 
-Seria darmowych wtyczek VST3 na Windows do pracy z wokalem. *Free VST3 vocal plugins for Windows (UI in Polish).*
+Seria darmowych wtyczek VST3 na Windows do wokalu i miksu. *Free VST3 plugins for Windows (UI in Polish).*
 
 | Wtyczka | Co robi |
 | --- | --- |
 | **WERS** | Sprawdza, czy każde słowo w numerze jest słyszalne na telefonie, w słuchawkach, w aucie, i naprawia te, które giną pod bitem |
 | **WERS Barwa** | Saturator pod wokal: dodaje barwę samogłoskom, a głoski syczące zostawia czyste |
 | **WERS Refren** | Z jednego głosu robi dubel, chór, ekipę, harmonie i efekty. 124 gotowe presety |
+| **WERS Docisk** | Czysty, precyzyjny kompresor z historią poziomu i krzywą, którą przeciągasz myszą. 27 presetów |
+| **WERS Lampa** | Kompresor z charakterem: optyczny albo lampowy, ze wskaźnikiem VU. Równo, gęsto i ciepło. 26 presetów |
+| **WERS Powiew** | Dynamiczna obecność i powietrze na górze pasma, bez syczenia. 22 presety |
+| **WERS Pogłos** | Algorytmiczny pogłos: osiem algorytmów, trzy epoki brzmienia, 60 presetów |
 
 ![WERS](docs/img/wers.png)
 
@@ -15,9 +19,21 @@ Seria darmowych wtyczek VST3 na Windows do pracy z wokalem. *Free VST3 vocal plu
   <img src="docs/img/refren.png" width="49%" alt="WERS Refren">
 </p>
 
+<p>
+  <img src="plugins/docisk/docs/docisk.png" width="49%" alt="WERS Docisk">
+  <img src="plugins/lampa/docs/lampa.png" width="49%" alt="WERS Lampa">
+</p>
+
+<p>
+  <img src="plugins/powiew/docs/powiew.png" width="49%" alt="WERS Powiew">
+  <img src="plugins/poglos/docs/poglos.png" width="49%" alt="WERS Pogłos">
+</p>
+
 ## Pobieranie
 
 Gotowe wtyczki są w zakładce [Releases](../../releases). Pobierz `WERS-Windows.zip`, rozpakuj i kliknij dwa razy `zainstaluj_wers.bat`. Potem w DAW uruchom ponowne skanowanie wtyczek.
+
+Docisku, Lampy, Powiewu i Pogłosu nie ma jeszcze w tej paczce. Zbuduj je ze źródeł (niżej) i zainstaluj plikiem `zainstaluj.bat` z folderu wtyczki.
 
 Wymagania: Windows 10 lub 11 (64-bit) i DAW obsługujący VST3. Rozpoznawanie tekstu w WERS potrzebuje procesora z AVX2 (praktycznie każdy z ostatnich 10 lat). Najlepiej działa w REAPERze, ale wszystkie trzy działają w każdym DAW-ie z VST3.
 
@@ -144,6 +160,26 @@ Grupy **Ulubione** i **Moje** są twoje. Gwiazdka na karcie dodaje preset do Ulu
 - Echo idzie za tempem projektu. Bez tempa przyjmuje 120 BPM.
 - Warstwy Głos i Robot potrzebują wysokości głosu, więc na szepcie, oddechu i syczących milkną. Do tego są warstwy Szept i maska.
 
+## Efekty do miksu
+
+Cztery wtyczki do codziennej pracy w miksie. Każda ma własne README z opisem wszystkich pokręteł, presetów i tego, jak działa w środku.
+
+### [WERS Docisk](plugins/docisk)
+
+Kompresor, który nic nie barwi: od przezroczystego wyrównania po mocne, nowoczesne dociśnięcie. Miękkie kolano, zakres, automatyczny powrót, wyprzedzenie, kompresja równoległa, zewnętrzny sidechain z filtrem i miękki clip na wyjściu. Duże okno przewija historię wejścia, wyjścia i redukcji, a próg, ratio i kolano przeciągasz myszą prosto na krzywej. Plik: `WERS Docisk.vst3`.
+
+### [WERS Lampa](plugins/lampa)
+
+Kompresor z charakterem, do wokalu, basu i szyny. Kilka dużych gałek, a czasy ataku i zwolnienia ustawia sam, zależnie od tego, co gra. Dwa charaktery: **Opto**, czyli komórka optyczna, i **Lampa**, czyli wzmacniacz o zmiennym wzmocnieniu. Kolor dokłada harmoniczne lampy i transformatorów, a wskaźnik VU pokazuje redukcję albo poziom. Plik: `WERS Lampa.vst3`.
+
+### [WERS Powiew](plugins/powiew)
+
+Dwa duże pokrętła, **Obecność** i **Powietrze**, rozjaśniają wokal, instrumenty albo cały miks. Każde łączy dynamiczny korektor z ekscyterem, który dorabia górę tam, gdzie nagranie jej nie ma. Detektor patrzy 1,5 ms do przodu i cofa podbicie na sybilantach i talerzach, zanim dotrą do wyjścia. Na zerze sygnał przechodzi próbka w próbkę bez zmian. Plik: `WERS Powiew.vst3`.
+
+### [WERS Pogłos](plugins/poglos)
+
+Algorytmiczny pogłos, gęsty i gładki, bez metalicznego dzwonienia. Osiem algorytmów (Sala, Pokój, Płyta, Komora, Ambient, Katedra, Błysk, Nieliniowy), trzy epoki brzmienia i 60 presetów w dziesięciu grupach. Pokrętło Czas to prawdziwy RT60, sprawdzany w testach na odpowiedzi impulsowej. Bez żadnych nagranych odpowiedzi impulsowych, wszystko liczy sam. Plik: `WERS Poglos.vst3`.
+
 ## Budowanie ze źródeł
 
 Potrzebne: Visual Studio 2022 z C++, CMake 3.22 lub nowszy, Git.
@@ -155,10 +191,22 @@ cmake --build build --config Release --target WERS_VST3 WersBarwa_VST3 WersRefre
 
 Gotowe wtyczki powstają w `build\plugins\wers\plugin\WERS_artefacts\Release\VST3\WERS.vst3`, `build\plugins\barwa\WersBarwa_artefacts\Release\VST3\WERS Barwa.vst3` i `build\plugins\refren\WersRefren_artefacts\Release\VST3\WERS Refren.vst3`. Skrypt `scripts\build_windows.bat` robi to samo i uruchamia też testy oraz pluginval.
 
-Układ repozytorium: `libs/dsp`, `libs/ui` i `libs/test` to wspólna baza serii, a `plugins/wers`, `plugins/barwa` i `plugins/refren` to same wtyczki. Każda kolejna wtyczka powstaje funkcją `wers_add_plugin` z `cmake/WersPlugin.cmake`.
+Docisk, Lampa, Powiew i Pogłos to osobne projekty CMake w swoich folderach. Korzystają ze wspólnego wyglądu z `libs/ui` i pomocy testowych z `libs/test`. Każdą buduje się tak samo, na przykład Docisk:
+
+```
+cd plugins/docisk
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake --build build --config Release
+build\Release\doc_dsp_tests.exe
+build\Release\doc_plugin_tests.exe
+```
+
+Gotowa wtyczka jest w `build\WersDocisk_artefacts\Release\VST3`, a `zainstaluj.bat` w folderze wtyczki sam ją tam znajdzie. Nazwy testów każdej wtyczki są w jej README.
+
+Układ repozytorium: `libs/dsp`, `libs/ui` i `libs/test` to wspólna baza serii, a `plugins/wers`, `plugins/barwa` i `plugins/refren` to same wtyczki. Każda z nich powstaje funkcją `wers_add_plugin` z `cmake/WersPlugin.cmake`. Efekty do miksu siedzą w `plugins/docisk`, `plugins/lampa`, `plugins/powiew` i `plugins/poglos`.
 
 ## Licencja
 
 Kod jest na licencji [GNU AGPL v3](LICENSE): możesz go używać, zmieniać i rozpowszechniać, pod warunkiem że Twoja wersja też będzie otwarta na tej samej licencji. Wynika to z JUCE 8, które poza licencją komercyjną jest dostępne właśnie na AGPLv3.
 
-Użyte biblioteki: JUCE 8 (AGPLv3), whisper.cpp (MIT), doctest (MIT). Model mowy to Whisper large-v3-turbo od OpenAI (MIT), pobierany osobno przy pierwszym uruchomieniu. Czcionki Bricolage Grotesque i Instrument Sans są na licencji OFL.
+Użyte biblioteki: JUCE 8 (AGPLv3), whisper.cpp (MIT), doctest (MIT). Efekty do miksu używają tylko JUCE i własnego kodu. Model mowy to Whisper large-v3-turbo od OpenAI (MIT), pobierany osobno przy pierwszym uruchomieniu. Czcionki Bricolage Grotesque i Instrument Sans są na licencji OFL.

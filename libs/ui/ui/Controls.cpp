@@ -2,10 +2,10 @@
 
 namespace wers::ui {
 
-FlatButton::FlatButton(const juce::String& text, Style style, bool accentWhenOn)
-    : juce::Button(text), style_(style), accent_(accentWhenOn) {
+FlatButton::FlatButton(const juce::String& label, Style style, bool accentWhenOn)
+    : juce::Button(label), style_(style), accent_(accentWhenOn) {
     setMouseCursor(juce::MouseCursor::PointingHandCursor);
-    setTitle(text);
+    setTitle(label);
 }
 
 void FlatButton::paintButton(juce::Graphics& g, bool over, bool down) {
@@ -45,7 +45,7 @@ void FlatButton::paintButton(juce::Graphics& g, bool over, bool down) {
     }
     g.setFont(style_ == Style::Solid && textSize_ >= 18.0f ? displayFont(600, textSize_) : uiFont(500, textSize_));
     g.setColour(text.withMultipliedAlpha(alpha));
-    g.drawFittedText(getButtonText(), getLocalBounds().reduced(6, 0), juce::Justification::centred, 1, 0.9f);
+    g.drawFittedText(getButtonText(), getLocalBounds().reduced(style_ == Style::Segment ? 3 : 6, 0), juce::Justification::centred, 1, 0.9f);
 }
 
 void SegmentRow::setItems(const juce::StringArray& names, const std::vector<int>& widths) {
@@ -53,10 +53,16 @@ void SegmentRow::setItems(const juce::StringArray& names, const std::vector<int>
     widths_ = widths;
     for (int i = 0; i < names.size(); ++i) {
         auto* b = buttons_.add(new FlatButton(names[i], FlatButton::Style::Segment));
+        b->setTextSize(textSize_);
         b->onClick = [this, i] { if (onPick) onPick(i); };
         addAndMakeVisible(b);
     }
     resized();
+}
+
+void SegmentRow::setTextSize(float size) {
+    textSize_ = size;
+    for (auto* b : buttons_) b->setTextSize(size);
 }
 
 void SegmentRow::setSelected(int index) {
@@ -66,6 +72,10 @@ void SegmentRow::setSelected(int index) {
 
 void SegmentRow::setTooltip(const juce::String& text) {
     for (auto* b : buttons_) b->setTooltip(text);
+}
+
+void SegmentRow::setItemTooltip(int index, const juce::String& text) {
+    if (index >= 0 && index < buttons_.size()) buttons_[index]->setTooltip(text);
 }
 
 int SegmentRow::preferredWidth() const {

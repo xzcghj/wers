@@ -24,7 +24,7 @@ inline const juce::Colour ink{ 0xff08201b };      // text on amber and mint
 juce::Font displayFont(int weight, float size);
 juce::Font uiFont(int weight, float size);
 
-class WersLook final : public juce::LookAndFeel_V4 {
+class WersLook : public juce::LookAndFeel_V4 {
 public:
     WersLook();
     void drawLinearSlider(juce::Graphics&, int x, int y, int width, int height, float sliderPos, float minSliderPos, float maxSliderPos, juce::Slider::SliderStyle, juce::Slider&) override;

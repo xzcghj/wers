@@ -30,10 +30,13 @@ public:
     int selected() const { return selected_; }
     int preferredWidth() const;
     void setTooltip(const juce::String& text);
+    void setItemTooltip(int index, const juce::String& text);
+    void setTextSize(float size);
     void resized() override;
     void paint(juce::Graphics&) override;
 private:
     juce::OwnedArray<FlatButton> buttons_;
+    float textSize_ = 14.0f;
     std::vector<int> widths_;
     int selected_ = -1;
 };
